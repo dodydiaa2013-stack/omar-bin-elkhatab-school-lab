@@ -1,6 +1,7 @@
+// REFERENCE-ONLY COPY: email addresses are redacted. Do not deploy without restoring verified project settings.
 
 const CLIENT_ID = "889693944069-h03fc0msck71367f96gqb9nh5stgvqk0.apps.googleusercontent.com";
-const ALLOWED_EMAIL = "dodydiaa2013@gmail.com";
+const ALLOWED_EMAIL = "REDACTED_ADMIN_EMAIL";
 
 const FOLDER_NAME = "صور مدرسة عمر بن الخطاب ث بنين";
 const SCHEDULE_FOLDER_NAME = "قوائم فصول مدرسة عمر بن الخطاب ث بنين";
@@ -9,7 +10,7 @@ const MAX_FILE_SIZE = 4 * 1024 * 1024;
 const ALLOWED_CLASSES = ["1/1", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7", "1/8"];
 const PAGE_CHANGES_FOLDER = "تعديلات صفحة مدرسة عمر بن الخطاب - الإنتاج";
 const PAGE_CHANGES_FILE = "page-changes-production.json";
-  const RECOVERY_EMAIL = "dodydiaa_2015@hotmail.com";
+  const RECOVERY_EMAIL = "REDACTED_RECOVERY_EMAIL";
 const ALLOWED_PAGE_ORIGINS = [
   "https://dodydiaa2013-stack.github.io"
 ];
@@ -2597,7 +2598,28 @@ function savePageChanges(p) {
     throw new Error("صيغة بيانات التعديلات غير صحيحة");
   }
 
-  if (!Array.isArray(data.changes) || data.changes.length > 500) {
+  // دعم الصيغة الأساسية { changes: [...] } وكذلك المصفوفة المباشرة
+  // والتوافق مع العملاء الذين يرسلون changes كسلسلة JSON.
+  let incomingChanges = null;
+
+  if (Array.isArray(data)) {
+    incomingChanges = data;
+  } else if (data && Array.isArray(data.changes)) {
+    incomingChanges = data.changes;
+  } else if (data && typeof data.changes === "string") {
+    try {
+      const nestedChanges = JSON.parse(data.changes);
+      incomingChanges = Array.isArray(nestedChanges)
+        ? nestedChanges
+        : nestedChanges && Array.isArray(nestedChanges.changes)
+          ? nestedChanges.changes
+          : null;
+    } catch (error) {
+      incomingChanges = null;
+    }
+  }
+
+  if (!Array.isArray(incomingChanges) || incomingChanges.length > 500) {
     throw new Error("قائمة التعديلات غير صحيحة");
   }
 
@@ -2631,7 +2653,7 @@ function savePageChanges(p) {
   const cleanChanges = [];
   const seenIds = new Set();
 
-  data.changes.forEach(function(item) {
+  incomingChanges.forEach(function(item) {
     if (
       !item ||
       typeof item.id !== "string" ||
@@ -2661,9 +2683,39 @@ function savePageChanges(p) {
     });
   });
 
-  if (!cleanChanges.length) {
+  const replaceAll = String(p.replaceAll || "").toLowerCase() === "true";
+
+  if (!cleanChanges.length && !replaceAll) {
     throw new Error("لا توجد تعديلات للحفظ");
   }
+
+  // القوائم الجزئية تُدمج مع آخر نسخة محفوظة؛ أما واجهة التحرير الكاملة
+  // فترسل replaceAll=true حتى يمكنها استبدال القائمة أو تفريغها عمدًا.
+  const existingPayload = getSavedPageChanges();
+
+  if (
+    !existingPayload ||
+    existingPayload.success !== true ||
+    !Array.isArray(existingPayload.changes)
+  ) {
+    throw new Error("تعذر قراءة التعديلات السابقة قبل تحديثها؛ لم يتم استبدالها.");
+  }
+
+  const mergedChanges = new Map();
+
+  if (!replaceAll) {
+    existingPayload.changes.forEach(function(item) {
+      mergedChanges.set(item.id, item.text);
+    });
+  }
+
+  cleanChanges.forEach(function(item) {
+    mergedChanges.set(item.id, item.text);
+  });
+
+  const finalChanges = Array.from(mergedChanges.entries()).map(function(entry) {
+    return { id: entry[0], text: entry[1] };
+  });
 
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -2675,7 +2727,7 @@ function savePageChanges(p) {
 
     savedPayload = {
       success: true,
-      changes: cleanChanges,
+      changes: finalChanges,
       updatedAt: new Date().toISOString()
     };
 
@@ -2695,7 +2747,7 @@ function savePageChanges(p) {
       );
     }
 
-    if (verification.changes.length !== cleanChanges.length) {
+    if (verification.changes.length !== finalChanges.length) {
       throw new Error(
         "عدد التعديلات المقروءة لا يطابق عدد التعديلات المرسلة."
       );
@@ -2718,8 +2770,8 @@ function savePageChanges(p) {
       verifiedChanges.set(item.id, item.text);
     });
 
-    for (let i = 0; i < cleanChanges.length; i++) {
-      const item = cleanChanges[i];
+    for (let i = 0; i < finalChanges.length; i++) {
+      const item = finalChanges[i];
 
       if (
         !verifiedChanges.has(item.id) ||
@@ -2746,7 +2798,7 @@ function savePageChanges(p) {
       htmlUpdatePending: true,
       message:
         "تم حفظ التعديلات وإرسالها إلى GitHub والتحقق منها. تحديث نسخة الصفحة جارٍ.",
-      count: cleanChanges.length
+      count: finalChanges.length
     });
   }
 
@@ -2763,7 +2815,7 @@ function savePageChanges(p) {
       (githubResult && githubResult.message
         ? githubResult.message
         : "يرجى مراجعة سجل تشخيص المزامنة."),
-    count: cleanChanges.length
+    count: finalChanges.length
   });
 }
 
@@ -2824,8 +2876,7 @@ function syncPageChangesToGitHub_(savedPayload) {
   try {
     if (
       !savedPayload ||
-      !Array.isArray(savedPayload.changes) ||
-      !savedPayload.changes.length
+      !Array.isArray(savedPayload.changes)
     ) {
       return fail("بيانات المزامنة غير صالحة.");
     }
@@ -2843,8 +2894,7 @@ function syncPageChangesToGitHub_(savedPayload) {
     if (
       !latest ||
       latest.success !== true ||
-      !Array.isArray(latest.changes) ||
-      !latest.changes.length
+      !Array.isArray(latest.changes)
     ) {
       return fail("تعذر قراءة أحدث التعديلات من Google Drive.");
     }
@@ -3458,7 +3508,7 @@ function verifyDeveloperGoogle(p) {
       p && (p.token || p.googleUploadToken) || ""
     ).trim();
 
-    const allowedDeveloperEmail = "dodydiaa2013@gmail.com";
+    const allowedDeveloperEmail = ALLOWED_EMAIL;
 
     if (!token) {
       return developerGooglePostMessage(p, {
