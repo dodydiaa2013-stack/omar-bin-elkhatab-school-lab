@@ -2685,7 +2685,7 @@ function savePageChanges(p) {
 
   const replaceAll = String(p.replaceAll || "").toLowerCase() === "true";
 
-  if (!cleanChanges.length && !replaceAll) {
+  if (!cleanChanges.length) {
     throw new Error("لا توجد تعديلات للحفظ");
   }
 
@@ -2877,7 +2877,8 @@ function syncPageChangesToGitHub_(savedPayload) {
   try {
     if (
       !savedPayload ||
-      !Array.isArray(savedPayload.changes)
+      !Array.isArray(savedPayload.changes) ||
+      !savedPayload.changes.length
     ) {
       return fail("بيانات المزامنة غير صالحة.");
     }
@@ -2895,7 +2896,8 @@ function syncPageChangesToGitHub_(savedPayload) {
     if (
       !latest ||
       latest.success !== true ||
-      !Array.isArray(latest.changes)
+      !Array.isArray(latest.changes) ||
+      !latest.changes.length
     ) {
       return fail("تعذر قراءة أحدث التعديلات من Google Drive.");
     }
