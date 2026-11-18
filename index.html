@@ -1529,7 +1529,7 @@ window.addEventListener('DOMContentLoaded', () => {
     loadSchedulesFromDrive();
     renderTabletGallery();
     assignPageEditIds();
-    applyCachedPageChanges();
+    // لا نطبّق كاش النصوص القديم؛ نسخة الخادم هي المرجع الوحيد.
 
     // أصبحت عناصر الصفحة جاهزة؛ طبّق الاستجابة المبكرة إن كانت وصلت بالفعل.
     window.__pageChangesDomReady = true;
@@ -2467,7 +2467,7 @@ async function saveAllPageChanges() {
     form.action = 'https://example.invalid/lab-backend-disabled';
     form.target = 'pageChangesUploadFrame';
     form.style.display = 'none';
-    const fields = { action:'savePageChanges', googleUploadToken:googleUploadToken, adminSessionToken:window.adminSessionToken, nonce:nonce, origin:location.origin, changes:payload };
+    const fields = { action:'savePageChanges', googleUploadToken:googleUploadToken, adminSessionToken:window.adminSessionToken, nonce:nonce, origin:location.origin, replaceAll:'true', changes:payload };
     Object.entries(fields).forEach(([name,value]) => {
         const input=document.createElement('input'); input.type='hidden'; input.name=name; input.value=value; form.appendChild(input);
     });
@@ -2745,32 +2745,6 @@ function applyPageChangesList(changes) {
     return stats;
 }
 
-function applyCachedPageChanges() {
-    try {
-        const cached = localStorage.getItem(PAGE_CHANGES_CACHE_KEY);
-        if (!cached) {
-
-            return false;
-        }
-        const parsed = JSON.parse(cached);
-        if (!parsed || !Array.isArray(parsed.changes)) {
-
-            return false;
-        }
-
-        // نظّف القيم القديمة من الكاش نفسه، وليس من العرض فقط.
-        parsed.changes = normalizeFixedPageChanges(parsed.changes);
-        localStorage.setItem(PAGE_CHANGES_CACHE_KEY, JSON.stringify(parsed));
-        applyPageChangesList(parsed.changes);
-
-        return true;
-    } catch (error) {
-
-        console.warn("تعذر تطبيق النسخة المحلية من تعديلات النصوص.", error);
-        return false;
-    }
-}
-
 function cacheCurrentPageChanges() {
     try {
 
@@ -2828,21 +2802,6 @@ function receivePageChanges(data) {
             : "استجابة الخادم لا تحتوي على قائمة تعديلات صحيحة.";
         console.error("تعذر استرجاع تعديلات نصوص الموقع:", message);
         return false;
-    }
-
-    // لا تستبدل نسخة محلية محفوظة بقائمة فارغة قبل التأكد من صحة رد الخادم.
-    try {
-        const cachedRaw = localStorage.getItem(PAGE_CHANGES_CACHE_KEY);
-        if (cachedRaw && data.changes.length === 0) {
-            const cached = JSON.parse(cachedRaw);
-            if (cached && Array.isArray(cached.changes) && cached.changes.length > 0) {
-                console.warn("وصلت قائمة تعديلات فارغة من الخادم مع وجود نسخة محلية محفوظة؛ تم الاحتفاظ بالنسخة المحلية.");
-                applyPageChangesList(cached.changes);
-                return true;
-            }
-        }
-    } catch (error) {
-        console.warn("تعذر فحص النسخة المحلية من تعديلات النصوص.", error);
     }
 
     const normalizedChanges = normalizeFixedPageChanges(data.changes);
