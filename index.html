@@ -245,6 +245,7 @@
 <script>
     // رابط خادم المختبر يُضبط من موضع واحد فقط بعد نشر Web App التجريبي.
     window.LAB_GOOGLE_SCRIPT_URL = "https://example.invalid/lab-backend-disabled";
+    window.LAB_GOOGLE_OAUTH_CLIENT_ID = "REPLACE_WITH_LAB_GOOGLE_OAUTH_CLIENT_ID";
 
     // ابدأ طلب تعديلات النصوص أثناء قراءة الصفحة بدل انتظار DOMContentLoaded.
     // إذا وصلت الاستجابة قبل تجهيز عناصر الصفحة، احتفظ بها حتى تصبح جاهزة.
@@ -3801,7 +3802,7 @@ function initGooglePhotoLogin() {
     }
 
     window.google.accounts.id.initialize({
-        client_id: '889693944069-h03fc0msck71367f96gqb9nh5stgvqk0.apps.googleusercontent.com',
+        client_id: window.LAB_GOOGLE_OAUTH_CLIENT_ID,
         callback: handleGoogleCredentialResponse
     });
 
