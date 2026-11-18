@@ -1,0 +1,92 @@
+name: Sync lab page text and publish automatically
+# Apps Script writes only to the dedicated input branch.
+# This workflow builds from main, validates the result, then proposes and merges
+# the text-only update. Repository branch protection remains in force.
+on:
+  push:
+    branches:
+      - "automation/lab-page-text-sync-input"
+    paths:
+      - "page-changes-lab.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: lab-page-text-sync-proposal
+  cancel-in-progress: false
+
+jobs:
+  sync-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main as the clean base
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fetch and validate latest saved changes
+        run: |
+          set -euo pipefail
+          git fetch origin automation/lab-page-text-sync-input
+          git show origin/automation/lab-page-text-sync-input:page-changes-lab.json > page-changes-lab.json
+          node -e "const p=require('./page-changes-lab.json'); if(!p || p.success!==true || !Array.isArray(p.changes) || p.changes.some(x=>!x || typeof x.id!=='string' || typeof x.text!=='string')) process.exit(1);"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install HTML parser
+        run: npm install --no-save jsdom@26
+
+      - name: Apply and validate saved text changes
+        run: |
+          set -euo pipefail
+          node scripts/sync-lab-page-texts.mjs
+          test -s index.html
+          node -e "const fs=require('fs'); const h=fs.readFileSync('index.html','utf8'); if(!h.includes('data-page-edit-id=')) process.exit(1);"
+
+      - name: Create or update the publication pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git switch --create automation/lab-page-text-sync
+          git add page-changes-lab.json index.html
+
+          if git diff --cached --quiet; then
+            echo "No page text changes are needed."
+            exit 0
+          fi
+
+          git commit -m "Prepare saved LAB school page text update"
+          git push --force origin HEAD:automation/lab-page-text-sync
+
+          pr_number=$(gh pr list --repo "$GITHUB_REPOSITORY" --head automation/lab-page-text-sync --base main --state open --json number --jq '.[0].number // empty')
+
+          if [ -z "$pr_number" ]; then
+            gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head automation/lab-page-text-sync \
+              --title "Publish saved LAB school page text" \
+              --body "## Automatic page-text publication
+
+          - Generated from the latest LAB Google Drive-saved page text payload.
+          - Updates only page-changes-lab.json and matching text in index.html.
+          - The workflow validates the generated update before proposing it.
+          - GitHub branch protection is not bypassed; if a required approval or check blocks merging, the PR remains open and the workflow reports the failure."
+            pr_number=$(gh pr list --repo "$GITHUB_REPOSITORY" --head automation/lab-page-text-sync --base main --state open --json number --jq '.[0].number')
+          fi
+
+          # Convert any existing draft PR to ready, then merge only if GitHub
+          # confirms all repository protection requirements are satisfied.
+          gh pr ready "$pr_number"
+          gh pr merge "$pr_number" --squash --delete-branch

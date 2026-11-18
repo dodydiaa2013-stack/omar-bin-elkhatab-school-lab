@@ -243,10 +243,14 @@
     })();
 </script>
 <script>
+    // رابط خادم المختبر يُضبط من موضع واحد فقط بعد نشر Web App التجريبي.
+    window.LAB_GOOGLE_SCRIPT_URL = "https://example.invalid/lab-backend-disabled";
+    window.LAB_GOOGLE_OAUTH_CLIENT_ID = "REPLACE_WITH_LAB_GOOGLE_OAUTH_CLIENT_ID";
+
     // ابدأ طلب تعديلات النصوص أثناء قراءة الصفحة بدل انتظار DOMContentLoaded.
     // إذا وصلت الاستجابة قبل تجهيز عناصر الصفحة، احتفظ بها حتى تصبح جاهزة.
     (() => {
-        const endpoint = "https://example.invalid/lab-backend-disabled";
+        const endpoint = window.LAB_GOOGLE_SCRIPT_URL;
         window.__pageChangesDomReady = false;
         window.__earlyPageChangesReceived = false;
 
@@ -1193,7 +1197,7 @@
 
     <!-- JAVASCRIPT LOGIC -->
     <script>
-        const GOOGLE_SCRIPT_URL = "https://example.invalid/lab-backend-disabled";
+        const GOOGLE_SCRIPT_URL = window.LAB_GOOGLE_SCRIPT_URL;
 
         // معاينة الصور داخل الموقع مع تكبير مستقل للصورة دون تكبير صفحة الموقع.
         let schoolImageViewerReturnFocus = null;
@@ -1918,7 +1922,7 @@ window.addEventListener('DOMContentLoaded', () => {
             try {
                 const requestForm = document.createElement('form');
                 requestForm.method = 'POST';
-                requestForm.action = 'https://example.invalid/lab-backend-disabled';
+                requestForm.action = GOOGLE_SCRIPT_URL;
                 requestForm.target = 'adminLoginFrame';
                 requestForm.style.display = 'none';
 
@@ -2470,7 +2474,7 @@ async function saveAllPageChanges() {
     }
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = 'https://example.invalid/lab-backend-disabled';
+    form.action = GOOGLE_SCRIPT_URL;
     form.target = 'pageChangesUploadFrame';
     form.style.display = 'none';
     const fields = { action:'savePageChanges', googleUploadToken:googleUploadToken, adminSessionToken:window.adminSessionToken, nonce:nonce, origin:location.origin, replaceAll:'true', changes:payload };
@@ -2771,7 +2775,7 @@ function cacheCurrentPageChanges() {
 }
 
 function loadSavedPageChanges() {
-    const scriptURL = "https://example.invalid/lab-backend-disabled";
+    const scriptURL = GOOGLE_SCRIPT_URL;
     const script = document.createElement("script");
 
     pageChangesResponseReceived = false;
@@ -3729,8 +3733,7 @@ function handleGoogleCredentialResponse(response) {
         window.removeEventListener('message', onMessage);
         clearTimeout(timeout);
 
-        if (data.result && data.result.success &&
-            data.result.email === 'dodydiaa2013@gmail.com') {
+        if (data.result && data.result.success) {
             isDeveloperLoggedIn = true;
             updateDeveloperUI();
             if (status) status.textContent = 'تم التحقق من الحساب المصرح به. أدوات المطور أصبحت متاحة.';
@@ -3799,7 +3802,7 @@ function initGooglePhotoLogin() {
     }
 
     window.google.accounts.id.initialize({
-        client_id: '889693944069-h03fc0msck71367f96gqb9nh5stgvqk0.apps.googleusercontent.com',
+        client_id: window.LAB_GOOGLE_OAUTH_CLIENT_ID,
         callback: handleGoogleCredentialResponse
     });
 

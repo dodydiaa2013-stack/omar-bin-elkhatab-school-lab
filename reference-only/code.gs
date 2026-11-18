@@ -1,16 +1,16 @@
-// REFERENCE-ONLY COPY: email addresses are redacted. Do not deploy without restoring verified project settings.
+// LAB SANDBOX BACKEND TEMPLATE: isolated from production. Replace the three identity placeholders before deployment.
 
-const CLIENT_ID = "889693944069-h03fc0msck71367f96gqb9nh5stgvqk0.apps.googleusercontent.com";
-const ALLOWED_EMAIL = "REDACTED_ADMIN_EMAIL";
+const CLIENT_ID = "REPLACE_WITH_LAB_GOOGLE_OAUTH_CLIENT_ID";
+const ALLOWED_EMAIL = "REPLACE_WITH_LAB_ADMIN_EMAIL";
 
-const FOLDER_NAME = "صور مدرسة عمر بن الخطاب ث بنين";
-const SCHEDULE_FOLDER_NAME = "قوائم فصول مدرسة عمر بن الخطاب ث بنين";
-const PHOTO_ALBUMS_FOLDER_NAME = "ألبومات معرض مدرسة عمر بن الخطاب ث بنين";
+const FOLDER_NAME = "مختبر - صور مدرسة عمر بن الخطاب ث بنين";
+const SCHEDULE_FOLDER_NAME = "مختبر - قوائم فصول مدرسة عمر بن الخطاب ث بنين";
+const PHOTO_ALBUMS_FOLDER_NAME = "مختبر - ألبومات معرض مدرسة عمر بن الخطاب ث بنين";
 const MAX_FILE_SIZE = 4 * 1024 * 1024;
 const ALLOWED_CLASSES = ["1/1", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7", "1/8"];
-const PAGE_CHANGES_FOLDER = "تعديلات صفحة مدرسة عمر بن الخطاب - الإنتاج";
-const PAGE_CHANGES_FILE = "page-changes-production.json";
-  const RECOVERY_EMAIL = "REDACTED_RECOVERY_EMAIL";
+const PAGE_CHANGES_FOLDER = "مختبر - تعديلات صفحة مدرسة عمر بن الخطاب";
+const PAGE_CHANGES_FILE = "page-changes-lab.json";
+const RECOVERY_EMAIL = "REPLACE_WITH_LAB_RECOVERY_EMAIL";
 const ALLOWED_PAGE_ORIGINS = [
   "https://dodydiaa2013-stack.github.io"
 ];
@@ -1369,7 +1369,7 @@ if (action === "photoAlbums") {
   }
   if (action === "pageChanges") {
     return outputWithCallback(
-      getSavedPageChanges(),
+      getPageChangesForClient_(),
       p.callback
     );
   }
@@ -2405,7 +2405,7 @@ function verifyAdminSession(token) {
 function getPageChangesFile() {
   const properties = PropertiesService.getScriptProperties();
   const savedId = properties.getProperty(
-    "PAGE_CHANGES_PRODUCTION_FILE_ID"
+    "PAGE_CHANGES_LAB_FILE_ID"
   );
 
   const folders = DriveApp.getFoldersByName(PAGE_CHANGES_FOLDER);
@@ -2475,7 +2475,7 @@ function getPageChangesFile() {
     }
 
     properties.setProperty(
-      "PAGE_CHANGES_PRODUCTION_FILE_ID",
+      "PAGE_CHANGES_LAB_FILE_ID",
       file.getId()
     );
 
@@ -2501,12 +2501,256 @@ function getPageChangesFile() {
   );
 
   properties.setProperty(
-    "PAGE_CHANGES_PRODUCTION_FILE_ID",
+    "PAGE_CHANGES_LAB_FILE_ID",
     newFile.getId()
   );
 
   return newFile;
 }
+/**
+ * بصمة ثابتة لمحتوى التعديلات، مع تجاهل ترتيب العناصر وحقول التوقيت.
+ * تستخدم لاكتشاف اتجاه التغيير دون الكتابة فوق نسخة أحدث.
+ */
+function getPageChangesSyncHash_(payload) {
+  if (!payload || !Array.isArray(payload.changes)) {
+    throw new Error("لا يمكن حساب بصمة لقائمة تعديلات غير صالحة.");
+  }
+
+  const normalized = payload.changes
+    .map(function(item) {
+      return { id: String(item.id), text: String(item.text) };
+    })
+    .sort(function(a, b) {
+      return a.id.localeCompare(b.id);
+    });
+
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    JSON.stringify(normalized),
+    Utilities.Charset.UTF_8
+  );
+
+  return Utilities.base64EncodeWebSafe(digest);
+}
+
+/**
+ * قراءة ملف التعديلات من فرع المختبر فقط.
+ * لا يعيد محتوى GitHub إلى Drive إلا إذا ثبت أن GitHub وحده هو الذي تغير
+ * منذ آخر نقطة مزامنة مشتركة.
+ */
+function syncPageChangesFromGitHub_() {
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  let stage = "validate";
+
+  try {
+    lock.waitLock(20000);
+    locked = true;
+
+    const properties = PropertiesService.getScriptProperties();
+    const token = properties.getProperty("GITHUB_LAB_PAGE_SYNC_TOKEN");
+    const branch = properties.getProperty("GITHUB_LAB_PAGE_SYNC_BRANCH");
+
+    if (!token || !branch) {
+      throw new Error("إعدادات GitHub الخاصة بالمختبر غير مكتملة.");
+    }
+
+    if (branch !== "automation/lab-page-text-sync-input") {
+      throw new Error("فرع استقبال التعديلات لا يطابق فرع المختبر المعتمد.");
+    }
+
+    const repository = "dodydiaa2013-stack/omar-bin-elkhatab-school-lab";
+    const filePath = "page-changes-lab.json";
+    const apiUrl = "https://api.github.com/repos/" +
+      repository + "/contents/" + filePath;
+
+    const headers = {
+      Authorization: "Bearer " + token,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    };
+
+    stage = "read-github";
+    const response = UrlFetchApp.fetch(
+      apiUrl + "?ref=" + encodeURIComponent(branch),
+      {
+        method: "get",
+        headers: headers,
+        muteHttpExceptions: true
+      }
+    );
+
+    const status = response.getResponseCode();
+
+    // عدم وجود ملف على GitHub في أول تشغيل ليس خطأ؛ Drive يظل المصدر الحالي.
+    if (status === 404) {
+      return { success: true, direction: "none", reason: "github-file-not-created" };
+    }
+
+    if (status !== 200) {
+      throw new Error("تعذرت قراءة ملف المختبر من GitHub. رمز الاستجابة: " + status);
+    }
+
+    const githubFile = JSON.parse(response.getContentText() || "{}");
+    if (githubFile.encoding !== "base64" || !githubFile.content || !githubFile.sha) {
+      throw new Error("استجابة ملف التعديلات من GitHub غير مكتملة.");
+    }
+
+    stage = "parse-github";
+    const githubText = Utilities.newBlob(
+      Utilities.base64Decode(githubFile.content.replace(/\s/g, ""))
+    ).getDataAsString("UTF-8");
+
+    const remotePayload = JSON.parse(githubText);
+    if (
+      !remotePayload ||
+      remotePayload.success !== true ||
+      !Array.isArray(remotePayload.changes) ||
+      remotePayload.changes.length > 500
+    ) {
+      throw new Error("بنية ملف التعديلات في GitHub غير صالحة.");
+    }
+
+    const remoteIds = new Set();
+    remotePayload.changes.forEach(function(item) {
+      if (
+        !item ||
+        typeof item.id !== "string" ||
+        typeof item.text !== "string" ||
+        item.id.length > 200 ||
+        item.text.length > 10000 ||
+        remoteIds.has(item.id)
+      ) {
+        throw new Error("توجد عناصر غير صالحة أو معرّفات مكررة في ملف GitHub.");
+      }
+      remoteIds.add(item.id);
+    });
+
+    stage = "read-drive";
+    const localPayload = getSavedPageChanges();
+    if (
+      !localPayload ||
+      localPayload.success !== true ||
+      !Array.isArray(localPayload.changes)
+    ) {
+      throw new Error("تعذرت قراءة نسخة Drive التجريبية.");
+    }
+
+    const localHash = getPageChangesSyncHash_(localPayload);
+    const remoteHash = getPageChangesSyncHash_(remotePayload);
+    const baselineHash = properties.getProperty("PAGE_CHANGES_LAST_SYNCED_HASH") || "";
+
+    // أول اتصال: لا نخمن أي النسختين أحدث. نثبت نقطة البداية فقط عند التطابق.
+    if (!baselineHash) {
+      if (localHash === remoteHash) {
+        properties.setProperty("PAGE_CHANGES_LAST_SYNCED_HASH", localHash);
+        properties.setProperty("PAGE_CHANGES_LAST_SYNCED_GITHUB_SHA", githubFile.sha);
+        return { success: true, direction: "baseline-established" };
+      }
+
+      console.warn("[LabPageSync] Initial conflict: Drive and GitHub differ; no overwrite performed.");
+      return {
+        success: false,
+        conflict: true,
+        direction: "conflict",
+        message: "نسختا Drive وGitHub مختلفتان ولا توجد نقطة مزامنة سابقة؛ لم يتم استبدال أي نسخة."
+      };
+    }
+
+    // النسختان متطابقتان: حدّث SHA المرجعي فقط.
+    if (localHash === remoteHash) {
+      properties.setProperty("PAGE_CHANGES_LAST_SYNCED_HASH", localHash);
+      properties.setProperty("PAGE_CHANGES_LAST_SYNCED_GITHUB_SHA", githubFile.sha);
+      return { success: true, direction: "already-in-sync" };
+    }
+
+    const driveChanged = localHash !== baselineHash;
+    const githubChanged = remoteHash !== baselineHash;
+
+    // GitHub وحده تغير: انقل النسخة إلى Drive ثم تحقق من الكتابة.
+    if (githubChanged && !driveChanged) {
+      stage = "write-drive";
+      const file = getPageChangesFile();
+      const payloadToSave = {
+        success: true,
+        changes: remotePayload.changes,
+        updatedAt: remotePayload.updatedAt || new Date().toISOString()
+      };
+
+      file.setContent(JSON.stringify(payloadToSave));
+
+      stage = "verify-drive";
+      const verified = getSavedPageChanges();
+      if (getPageChangesSyncHash_(verified) !== remoteHash) {
+        throw new Error("لم تتطابق نسخة Drive بعد استقبال تحديث GitHub.");
+      }
+
+      properties.setProperty("PAGE_CHANGES_LAST_SYNCED_HASH", remoteHash);
+      properties.setProperty("PAGE_CHANGES_LAST_SYNCED_GITHUB_SHA", githubFile.sha);
+
+      console.log("[LabPageSync] GitHub -> Drive completed and verified.");
+      return { success: true, direction: "github-to-drive" };
+    }
+
+    // Drive وحده تغير: اطلب من المسار الحالي إعادة دفعه إلى GitHub بعد تحرير القفل.
+    if (driveChanged && !githubChanged) {
+      return {
+        success: true,
+        direction: "drive-to-github",
+        payload: localPayload
+      };
+    }
+
+    // تغيرت النسختان منذ آخر نقطة مشتركة؛ لا نختار فائزًا تلقائيًا.
+    console.warn("[LabPageSync] Conflict: both Drive and GitHub changed; no overwrite performed.");
+    return {
+      success: false,
+      conflict: true,
+      direction: "conflict",
+      message: "حدث تعديل مستقل في Drive وGitHub منذ آخر مزامنة؛ أوقفنا المزامنة حفاظًا على التعديلات."
+    };
+
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    console.error("[LabPageSync] " + stage + ": " + message);
+    return {
+      success: false,
+      direction: "error",
+      message: "تعذرت المزامنة العكسية في المرحلة " + stage + ": " + message
+    };
+  } finally {
+    if (locked) lock.releaseLock();
+  }
+}
+
+/**
+ * نقطة دخول تحميل النصوص: تزامن GitHub -> Drive عند الحاجة،
+ * ثم تعيد النسخة المحفوظة في Drive إلى الموقع.
+ */
+function getPageChangesForClient_() {
+  const syncResult = syncPageChangesFromGitHub_();
+
+  if (
+    syncResult &&
+    syncResult.success === true &&
+    syncResult.direction === "drive-to-github" &&
+    syncResult.payload
+  ) {
+    // تتم هذه الخطوة بعد تحرير قفل المزامنة العكسية.
+    const outbound = syncPageChangesToGitHub_(syncResult.payload);
+    if (!outbound || outbound.success !== true) {
+      console.warn("[LabPageSync] Drive -> GitHub retry did not complete.");
+    }
+  }
+
+  if (syncResult && syncResult.conflict) {
+    console.warn("[LabPageSync] " + syncResult.message);
+  }
+
+  // حتى عند تعذر المزامنة، لا نحول خطأ الربط إلى قائمة فارغة.
+  return getSavedPageChanges();
+}
+
 function getSavedPageChanges() {
   try {
     const file = getPageChangesFile();
@@ -2913,8 +3157,8 @@ function syncPageChangesToGitHub_(savedPayload) {
 
     const properties = PropertiesService.getScriptProperties();
 
-    const token = properties.getProperty("GITHUB_PAGE_SYNC_TOKEN");
-    const branch = properties.getProperty("GITHUB_PAGE_SYNC_BRANCH");
+    const token = properties.getProperty("GITHUB_LAB_PAGE_SYNC_TOKEN");
+    const branch = properties.getProperty("GITHUB_LAB_PAGE_SYNC_BRANCH");
 
     branchForLog = branch || "";
 
@@ -2924,15 +3168,15 @@ function syncPageChangesToGitHub_(savedPayload) {
       );
     }
 
-    if (branch !== "automation/page-text-sync-input") {
+    if (branch !== "automation/lab-page-text-sync-input") {
   return fail(
     "فرع استقبال التعديلات غير صحيح. لم يتم إرسال أي تحديث."
   );
 }
     const repository =
-      "dodydiaa2013-stack/omar-bin-elkhatab-school";
+      "dodydiaa2013-stack/omar-bin-elkhatab-school-lab";
 
-    const filePath = "page-changes-production.json";
+    const filePath = "page-changes-lab.json";
 
     const apiUrl =
       "https://api.github.com/repos/" +
@@ -3089,11 +3333,18 @@ function syncPageChangesToGitHub_(savedPayload) {
       );
     }
 
+    const syncedHash = getPageChangesSyncHash_(payloadToSync);
+    properties.setProperty("PAGE_CHANGES_LAST_SYNCED_HASH", syncedHash);
+    properties.setProperty(
+      "PAGE_CHANGES_LAST_SYNCED_GITHUB_SHA",
+      githubFile.sha || ""
+    );
+
     stage = "completed";
 
     logDiagnostic(
       "success",
-      "تمت مطابقة محتوى GitHub مع بيانات Google Drive."
+      "تمت مطابقة محتوى GitHub مع بيانات Google Drive وتحديث نقطة المزامنة المشتركة."
     );
 
     return {
