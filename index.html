@@ -3046,6 +3046,13 @@ async function renderTabletGallery(imagesOverride) {
     const gallery = document.getElementById('tabletGallery');
     const management = document.getElementById('tabletImageManagement');
     if (management) management.classList.toggle('hidden', !hasDualAdminAuthorization());
+    // نسخة المختبر لا تتصل بخدمات Apps Script؛ اعرض حالة المعاينة بدل طلب عنوان backend المعطّل.
+    if (!Array.isArray(imagesOverride) &&
+        GOOGLE_SCRIPT_URL === 'https://example.invalid/lab-backend-disabled') {
+        tabletGalleryCache = [];
+        gallery.innerHTML = '<p class="text-xs text-slate-500 col-span-full text-center py-4">قسم النشرات غير متصل في نسخة المعاينة. ستظهر النشرات عند استخدام الموقع الإنتاجي.</p>';
+        return [];
+    }
     if (!Array.isArray(imagesOverride)) {
         gallery.innerHTML = '<p class="text-xs text-slate-400 col-span-full text-center py-4">جارٍ تحميل النشرات...</p>';
     }
