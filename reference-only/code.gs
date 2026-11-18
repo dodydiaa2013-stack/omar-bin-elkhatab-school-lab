@@ -10,7 +10,7 @@ const MAX_FILE_SIZE = 4 * 1024 * 1024;
 const ALLOWED_CLASSES = ["1/1", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7", "1/8"];
 const PAGE_CHANGES_FOLDER = "مختبر - تعديلات صفحة مدرسة عمر بن الخطاب";
 const PAGE_CHANGES_FILE = "page-changes-lab.json";
-  const RECOVERY_EMAIL = "REPLACE_WITH_LAB_RECOVERY_EMAIL";
+const RECOVERY_EMAIL = "REPLACE_WITH_LAB_RECOVERY_EMAIL";
 const ALLOWED_PAGE_ORIGINS = [
   "https://dodydiaa2013-stack.github.io"
 ];
