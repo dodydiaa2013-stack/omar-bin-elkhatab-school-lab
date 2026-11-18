@@ -15,7 +15,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: page-text-sync-proposal
+  group: lab-page-text-sync-proposal
   cancel-in-progress: false
 
 jobs:
@@ -46,7 +46,7 @@ jobs:
       - name: Apply and validate saved text changes
         run: |
           set -euo pipefail
-          node scripts/sync-page-texts.mjs
+          node scripts/sync-lab-page-texts.mjs
           test -s index.html
           node -e "const fs=require('fs'); const h=fs.readFileSync('index.html','utf8'); if(!h.includes('data-page-edit-id=')) process.exit(1);"
 
