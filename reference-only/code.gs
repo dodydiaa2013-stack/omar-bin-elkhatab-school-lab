@@ -2689,40 +2689,41 @@ function savePageChanges(p) {
     throw new Error("لا توجد تعديلات للحفظ");
   }
 
-  // القوائم الجزئية تُدمج مع آخر نسخة محفوظة؛ أما واجهة التحرير الكاملة
-  // فترسل replaceAll=true حتى يمكنها استبدال القائمة أو تفريغها عمدًا.
-  const existingPayload = getSavedPageChanges();
-
-  if (
-    !existingPayload ||
-    existingPayload.success !== true ||
-    !Array.isArray(existingPayload.changes)
-  ) {
-    throw new Error("تعذر قراءة التعديلات السابقة قبل تحديثها؛ لم يتم استبدالها.");
-  }
-
-  const mergedChanges = new Map();
-
-  if (!replaceAll) {
-    existingPayload.changes.forEach(function(item) {
-      mergedChanges.set(item.id, item.text);
-    });
-  }
-
-  cleanChanges.forEach(function(item) {
-    mergedChanges.set(item.id, item.text);
-  });
-
-  const finalChanges = Array.from(mergedChanges.entries()).map(function(entry) {
-    return { id: entry[0], text: entry[1] };
-  });
-
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
 
   let savedPayload;
+  let finalChanges = [];
 
   try {
+    // تُقرأ النسخة السابقة بعد الحصول على القفل حتى لا يطغى طلب متزامن
+    // على تعديلات طلب آخر عند دمج القوائم الجزئية.
+    const existingPayload = getSavedPageChanges();
+
+    if (
+      !existingPayload ||
+      existingPayload.success !== true ||
+      !Array.isArray(existingPayload.changes)
+    ) {
+      throw new Error("تعذر قراءة التعديلات السابقة قبل تحديثها؛ لم يتم استبدالها.");
+    }
+
+    const mergedChanges = new Map();
+
+    if (!replaceAll) {
+      existingPayload.changes.forEach(function(item) {
+        mergedChanges.set(item.id, item.text);
+      });
+    }
+
+    cleanChanges.forEach(function(item) {
+      mergedChanges.set(item.id, item.text);
+    });
+
+    finalChanges = Array.from(mergedChanges.entries()).map(function(entry) {
+      return { id: entry[0], text: entry[1] };
+    });
+
     const file = getPageChangesFile();
 
     savedPayload = {
