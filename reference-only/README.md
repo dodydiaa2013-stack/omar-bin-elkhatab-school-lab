@@ -44,7 +44,9 @@ The first lab request creates the lab page-text folder/file. Other image, schedu
 
 The OAuth client must be configured for the GitHub Pages origin `https://dodydiaa2013-stack.github.io`. The Web App deployment must be separate from production and grant the required access for the site's JSONP/form-post flow.
 
-After deploying the lab Web App, update the lab `index.html` backend URL in all backend call sites with that new Web App URL. Do not use the production Apps Script URL.
+After deploying the lab Web App, replace the single `window.LAB_GOOGLE_SCRIPT_URL` value near the top of the lab `index.html` with that new Web App URL. All admin/backend calls use this one setting. Do not use the production Apps Script URL.
+
+The embedded student results, leaders, programming-platform, and student-code frames remain deliberately disconnected in the lab. They are separate Apps Script services in production and must not be pointed at production data. To make those four services functional in the lab, their independent source projects and test datasets must also be cloned and deployed separately.
 
 ## Files
 
