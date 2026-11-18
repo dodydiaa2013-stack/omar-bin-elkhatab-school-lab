@@ -243,7 +243,10 @@
     })();
 </script>
 <script>
-    // رابط خادم المختبر يُضبط من موضع واحد فقط بعد نشر Web App التجريبي.\n    window.LAB_GOOGLE_SCRIPT_URL = "https://example.invalid/lab-backend-disabled";\n\n    // ابدأ طلب تعديلات النصوص أثناء قراءة الصفحة بدل انتظار DOMContentLoaded.
+    // رابط خادم المختبر يُضبط من موضع واحد فقط بعد نشر Web App التجريبي.
+    window.LAB_GOOGLE_SCRIPT_URL = "https://example.invalid/lab-backend-disabled";
+
+    // ابدأ طلب تعديلات النصوص أثناء قراءة الصفحة بدل انتظار DOMContentLoaded.
     // إذا وصلت الاستجابة قبل تجهيز عناصر الصفحة، احتفظ بها حتى تصبح جاهزة.
     (() => {
         const endpoint = window.LAB_GOOGLE_SCRIPT_URL;
@@ -3729,8 +3732,7 @@ function handleGoogleCredentialResponse(response) {
         window.removeEventListener('message', onMessage);
         clearTimeout(timeout);
 
-        if (data.result && data.result.success &&
-            true) {
+        if (data.result && data.result.success) {
             isDeveloperLoggedIn = true;
             updateDeveloperUI();
             if (status) status.textContent = 'تم التحقق من الحساب المصرح به. أدوات المطور أصبحت متاحة.';
