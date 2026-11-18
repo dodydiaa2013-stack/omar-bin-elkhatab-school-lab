@@ -1,0 +1,12 @@
+@import "tailwindcss";
+@source "../index.html";
+
+@theme {
+    --color-navy: #0B132B;
+    --color-navy-light: #1C2541;
+    --color-navy-lighter: #3A506B;
+    --color-gold: #F59E0B;
+    --color-gold-hover: #D97706;
+    --color-gold-light: #FEF3C7;
+    --font-cairo: 'Cairo', sans-serif;
+}
