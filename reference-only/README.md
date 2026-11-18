@@ -25,7 +25,7 @@ The lab backend template supports guarded two-way synchronization:
 
 Create a **new, separate Apps Script project** and use the complete `code.gs` template after filling only these identity placeholders in that new project:
 
-- `REPLACE_WITH_LAB_GOOGLE_OAUTH_CLIENT_ID`
+- `REPLACE_WITH_LAB_GOOGLE_OAUTH_CLIENT_ID` in both `reference-only/code.gs` and the single `window.LAB_GOOGLE_OAUTH_CLIENT_ID` setting in `index.html` (use the same lab OAuth client ID in both)
 - `REPLACE_WITH_LAB_ADMIN_EMAIL`
 - `REPLACE_WITH_LAB_RECOVERY_EMAIL`
 
