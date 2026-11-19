@@ -2467,6 +2467,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
         let pendingPageChangesNonce = null;
 let pageChangesTimeout = null;
+let pageChangesStatusHideTimer = null;
 let pendingPageChangesSnapshot = null;
 let pendingReviewStatusNonce = null;
 let pendingReviewStatusHash = "";
@@ -2635,6 +2636,10 @@ async function saveAllPageChanges() {
     Object.entries(fields).forEach(([name,value]) => {
         const input=document.createElement('input'); input.type='hidden'; input.name=name; input.value=value; form.appendChild(input);
     });
+    if (pageChangesStatusHideTimer) {
+        clearTimeout(pageChangesStatusHideTimer);
+        pageChangesStatusHideTimer = null;
+    }
     const status = getPageChangesSaveStatus();
     if (status) status.textContent = 'تم إرسال طلب الحفظ، في انتظار تأكيد حفظ النصوص في GitHub...';
     document.body.appendChild(form);
@@ -2818,10 +2823,18 @@ window.addEventListener('message', function(event) {
 
         const saveSuccessMessage = 'تم الحفظ بنجاح.';
         if (status) {
-            status.textContent = 'تم';
+            status.textContent = saveSuccessMessage;
             status.classList.remove('hidden');
             status.setAttribute('role', 'status');
             status.setAttribute('aria-live', 'polite');
+
+            // نُبقي تأكيد النجاح ظاهرًا قليلًا ثم نخفي الشريط تلقائيًا.
+            if (pageChangesStatusHideTimer) clearTimeout(pageChangesStatusHideTimer);
+            pageChangesStatusHideTimer = setTimeout(() => {
+                status.classList.add('hidden');
+                status.textContent = '';
+                pageChangesStatusHideTimer = null;
+            }, 3000);
         }
 
         reviewExpectedHash = String(result.reviewExpectedHash || '');
