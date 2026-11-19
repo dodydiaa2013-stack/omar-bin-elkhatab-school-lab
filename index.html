@@ -2513,53 +2513,27 @@ window.addEventListener('message', function(event) {
     const status = document.getElementById('googleSignInStatus');
     const result = data.result || {};
 
-    // لا نعلن النجاح إلا بعد تأكيد الحفظ في Drive والمزامنة مع GitHub.
+    // لا نعلن النجاح إلا بعد إعادة قراءة النصوص والتحقق منها في GitHub.
     if (
         result.success === true &&
-        result.driveSaved === true &&
-        result.githubSynced === true
+        result.githubSaved === true &&
+        result.githubVerified === true
     ) {
         cacheCurrentPageChanges();
 
         if (status) status.textContent = '';
-
         if (isLiveEditing) toggleLiveEditing();
 
-        alert(
-            'تم حفظ التعديلات بنجاح وإرسالها إلى GitHub. ' +
-            'تحديث نسخة الموقع جارٍ.'
-        );
-
+        alert('تم حفظ النصوص في مستودع المختبر والتحقق منها. تحديث المعاينة جارٍ.');
         return;
     }
 
-    // الحفظ في Drive تم، لكن مزامنة GitHub لم تنجح.
-    if (
-        result.driveSaved === true &&
-        result.githubSynced === false
-    ) {
-        const message =
-            result.message ||
-            'تم حفظ التعديلات في Google Drive، لكن تعذرت مزامنتها مع GitHub.';
-
-        if (status) status.textContent = message;
-
-        alert(
-            'تم الحفظ في Google Drive فقط، ولم يتم تأكيد تحديث نسخة الموقع المنشورة.\n\n' +
-            message
-        );
-
-        return;
-    }
-
-    // فشل الحفظ أو لم تصل استجابة مؤكدة بالصيغة المتوقعة.
     const message =
         result.message ||
         result.error ||
-        'لم يتم تأكيد نجاح حفظ التعديلات.';
+        'لم يتم تأكيد حفظ النصوص في GitHub.';
 
     if (status) status.textContent = message;
-
     alert('لم يتم تأكيد حفظ التعديلات: ' + message);
 });
 
