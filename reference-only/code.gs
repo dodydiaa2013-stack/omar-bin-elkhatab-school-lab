@@ -2402,7 +2402,7 @@ function verifyAdminSession(token) {
 
 /**
  * GitHub هو مصدر الحقيقة الوحيد لتعديلات النصوص في المختبر.
- * لا تستخدم هذه الدوال Google Drive أو ملف PAGE_CHANGES_LAB_FILE_ID.
+ * لا تستخدم هذه الدوال Google Drive لتخزين نصوص الموقع.
  */
 function getLabPageChangesGitHubSettings_() {
   const properties = PropertiesService.getScriptProperties();
@@ -2716,7 +2716,7 @@ function savePageChanges(p) {
       updatedAt: new Date().toISOString()
     };
 
-    const jsonContent = JSON.stringify(payloadToSave, null, 2) + "\\n";
+    const jsonContent = JSON.stringify(payloadToSave, null, 2) + "\n";
     const contentBase64 = Utilities.base64Encode(
       Utilities.newBlob(jsonContent, "application/json", current.settings.path).getBytes()
     );
