@@ -1,62 +1,63 @@
-# Reference-only files and lab backend setup
+# ملفات مرجعية وتجهيز خادم المختبر
 
-These files are source templates for the **public GitHub Pages lab only**. They are not the live production Apps Script project and must never be copied into the production deployment without a separate review.
+هذه الملفات مخصصة **لنسخة المختبر العامة فقط**. ملف `reference-only/الكود.gs` مرجع للمراجعة، وليس خادم المختبر. لا تنسخ كود المختبر إلى نشر الإنتاج.
 
-## Lab isolation
+## عزل المختبر
 
-The lab Apps Script template uses separate Drive folders for images, schedules, and albums. **Page text is the exception: it is stored only in GitHub, not in Google Drive.**
+- خادم Apps Script للمختبر يجب أن يكون **مشروعًا منفصلًا جديدًا** عن مشروع الإنتاج.
+- مجلدات الصور والجداول والألبومات في الخادم التجريبي تبدأ بالبادئة `مختبر -`.
+- نصوص الصفحة لا تُخزَّن في Google Drive إطلاقًا؛ مصدرها الوحيد ملف `page-changes-lab.json`.
+- مستودع النصوص: `dodydiaa2013-stack/omar-bin-elkhatab-school-lab`.
+- فرع استقبال النصوص: `automation/lab-page-text-sync-input`.
+- ملف HTML لا يتصل بأي خادم حتى يُستبدل الرابط التجريبي المعطّل برابط Web App تجريبي مستقل.
 
-- Image, schedule, and album folders are prefixed with `مختبر -`.
-- Page text JSON: `page-changes-lab.json` in the lab repository.
-- GitHub repository: `dodydiaa2013-stack/omar-bin-elkhatab-school-lab`.
-- GitHub input branch: `automation/lab-page-text-sync-input`.
-- The lab HTML backend URL remains deliberately disabled until the separate lab Apps Script Web App is deployed and its URL is inserted into the lab site.
+## حماية الحفظ
 
-## GitHub-only page-text storage
+1. يقرأ الموقع النصوص من خادم المختبر فقط، ويشترط وجود العلامة `environment: "LAB"`.
+2. إذا رد خادم الإنتاج أو أي خادم لا يعلن بيئة LAB، يرفض الموقع تطبيق الاستجابة ويوقف الحفظ.
+3. يكتب خادم المختبر إلى ملف JSON في فرع المختبر فقط، باستخدام SHA لمنع الكتابة فوق تعديل متزامن.
+4. يحتفظ الحفظ بكل المعرّفات الموجودة مسبقًا ويحدّث النصوص المرسلة فقط؛ لا يوجد استبدال شامل للقائمة ولا حذف صامت لمعرّفات قديمة.
+5. يعيد الخادم قراءة ملف GitHub ويتحقق من تطابق النصوص قبل إعلان النجاح.
+6. سير العمل يتحقق من وجود كل معرّف محفوظ في HTML ومن عدم وجود معرّفات مكررة، ثم ينشئ **طلب مراجعة Draft** لتحديث نسخة المختبر.
+7. لا يدمج سير العمل الطلب تلقائيًا. لا يُحدّث فرع `main` ولا نسخة المختبر المنشورة إلا بعد مراجعة بشرية وموافقة صريحة.
 
-1. The website requests saved text from the lab Apps Script.
-2. Apps Script reads `page-changes-lab.json` directly from the dedicated GitHub input branch.
-3. After administrator password and Google verification, saving writes the new JSON directly to that branch.
-4. Apps Script re-reads the file and verifies its content before confirming success.
-5. After a successful write and read-back verification, the lab Apps Script sends a `repository_dispatch` event to start the sync workflow immediately.
-6. The workflow also runs on a five-minute schedule as a safety net, and retains the input-branch push trigger and manual `workflow_dispatch` entry point.
-7. The workflow validates the JSON and publishes the matching text into the lab `index.html`.
-8. GitHub's file SHA is used for optimistic concurrency. If the file changes between read and write, the save is rejected rather than overwriting the newer change.
+## تثبيت المعرّفات
 
-For immediate event-driven publishing, deploy the updated `reference-only/code.gs` to the separate lab Apps Script Web App. The scheduled workflow still provides automatic publishing within its next five-minute check if the deployed script has not yet been updated. No extra GitHub token permission is required beyond the lab repository's existing Contents read/write permission.
+ملف `scripts/sync-lab-page-texts.mjs` يحوّل المعرّفات التلقائية الحالية إلى سمات صريحة `data-page-edit-id` داخل HTML، مع الاحتفاظ بقيم المعرّفات نفسها. لا يعيد تسمية النصوص ولا يعتمد على تطابق الكلمات؛ لذلك تبقى النصوص المتكررة مستقلة.
 
-There is no page-text JSON file, folder, file ID, or text synchronization baseline in Google Drive. Drive remains in use for images, schedules, and albums only.
+- لا يحذف أي سجل من ملف النصوص.
+- يرفض العمل إذا وجد معرّفًا مكررًا أو سجلًا محفوظًا لا يقابله عنصر في الصفحة.
+- يضيف السمات إلى مصدر HTML مباشرة، ولا يعيد تسلسل الصفحة كاملة؛ وبذلك يحافظ على بنية الصفحة وتنسيقها قدر الإمكان.
+- بعد تثبيت السمات داخل HTML، لا يعود المعرّف تابعًا لموضع العنصر في DOM.
 
-## Before deploying the lab Apps Script
+## إعداد خادم المختبر (خطوة مطلوبة من حسابك)
 
-Create a **new, separate Apps Script project** and use the complete `code.gs` template after filling only these identity placeholders in that new project:
+أنشئ مشروع Apps Script **جديدًا مستقلًا**، واستخدم الملف `reference-only/code.gs` بعد استبدال هذه القيم داخله فقط:
 
-- `REPLACE_WITH_LAB_GOOGLE_OAUTH_CLIENT_ID` in both `reference-only/code.gs` and the single `window.LAB_GOOGLE_OAUTH_CLIENT_ID` setting in `index.html` (use the same lab OAuth client ID in both)
+- `REPLACE_WITH_LAB_GOOGLE_OAUTH_CLIENT_ID`
 - `REPLACE_WITH_LAB_ADMIN_EMAIL`
 - `REPLACE_WITH_LAB_RECOVERY_EMAIL`
 
-Do not put the real values in this public repository.
+أنشئ OAuth Client مخصصًا للمختبر، وأضف أصل الموقع `https://dodydiaa2013-stack.github.io`. لا تضع كلمات مرور أو مفاتيح أو رموز وصول في المستودع.
 
-Configure these Script Properties in the new lab Apps Script project:
+أضف Script Properties التالية في مشروع Apps Script التجريبي:
 
-| Property | Value |
+| الخاصية | القيمة |
 |---|---|
-| `ADMIN_PASSWORD_HASH`, `ADMIN_PASSWORD_SALT` | Lab-only admin password verifier values, generated using the existing recovery/setup process |
-| `GITHUB_LAB_PAGE_SYNC_TOKEN` | A narrowly scoped GitHub token with Contents read/write access to this lab repository |
+| `ADMIN_PASSWORD_HASH` و `ADMIN_PASSWORD_SALT` | قيم تحقق مخصصة لحساب مسؤول المختبر |
+| `GITHUB_LAB_PAGE_SYNC_TOKEN` | رمز GitHub محدود الصلاحيات لقراءة وكتابة Contents في مستودع المختبر فقط |
 | `GITHUB_LAB_PAGE_SYNC_BRANCH` | `automation/lab-page-text-sync-input` |
 | `ADMIN_AUTH_VERSION` | `1` |
 
-The page-text JSON file is kept in the GitHub input branch and is not created in Drive. Other image, schedule, and album folders are created/used under the lab-prefixed names. Ensure the lab Google account has its own test data; do not point these functions at production folders or file IDs.
+بعد نشر Web App جديد للمختبر، يُوضع رابطه في السطر الوحيد `window.LAB_GOOGLE_SCRIPT_URL` في `index.html`، ويُوضع OAuth Client ID التجريبي في `window.LAB_GOOGLE_OAUTH_CLIENT_ID`. لا تستخدم رابط Apps Script الخاص بالإنتاج.
 
-The OAuth client must be configured for the GitHub Pages origin `https://dodydiaa2013-stack.github.io`. The Web App deployment must be separate from production and grant the required access for the site's JSONP/form-post flow.
+**مهم:** المشروع التجريبي يستخدم مجلدات Drive منفصلة للصور والجداول والألبومات. أما خدمات النتائج والأوائل ومنصة البرمجة وكود الطالب المضمنة داخل الإطارات فتبقى غير متصلة في المختبر حتى تُنشأ لها خدمات وبيانات اختبار مستقلة.
 
-After deploying the lab Web App, replace the single `window.LAB_GOOGLE_SCRIPT_URL` value near the top of the lab `index.html` with that new Web App URL. All admin/backend calls use this one setting. Do not use the production Apps Script URL.
+## الملفات
 
-The embedded student results, leaders, programming-platform, and student-code frames remain deliberately disconnected in the lab. They are separate Apps Script services in production and must not be pointed at production data. To make those four services functional in the lab, their independent source projects and test datasets must also be cloned and deployed separately.
+- `code.gs`: قالب خادم Apps Script التجريبي المعزول.
+- `الكود.gs`: نسخة مرجعية منفصلة للمراجعة فقط.
+- `scripts/sync-lab-page-texts.mjs`: أداة تثبيت المعرّفات والتحقق من النصوص.
+- `.github/workflows/sync-lab-page-texts.yml`: يتحقق من التغييرات وينشئ طلب مراجعة Draft دون دمج تلقائي.
 
-## Files
-
-- `code.gs`: isolated lab backend template; placeholders remain intentionally unfilled.
-- `code-before-text-fixes.gs`: original review snapshot retained for comparison.
-
-No passwords, OAuth client secrets, GitHub tokens, or private keys belong in this repository.
+لا تضع أي أسرار أو كلمات مرور أو OAuth secrets أو GitHub tokens داخل المستودع.
