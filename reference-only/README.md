@@ -18,8 +18,12 @@ The lab Apps Script template uses separate Drive folders for images, schedules, 
 2. Apps Script reads `page-changes-lab.json` directly from the dedicated GitHub input branch.
 3. After administrator password and Google verification, saving writes the new JSON directly to that branch.
 4. Apps Script re-reads the file and verifies its content before confirming success.
-5. The existing workflow validates the JSON and publishes the matching text into the lab `index.html`.
-6. GitHub's file SHA is used for optimistic concurrency. If the file changes between read and write, the save is rejected rather than overwriting the newer change.
+5. After a successful write and read-back verification, the lab Apps Script sends a `repository_dispatch` event to start the sync workflow immediately.
+6. The workflow also runs on a five-minute schedule as a safety net, and retains the input-branch push trigger and manual `workflow_dispatch` entry point.
+7. The workflow validates the JSON and publishes the matching text into the lab `index.html`.
+8. GitHub's file SHA is used for optimistic concurrency. If the file changes between read and write, the save is rejected rather than overwriting the newer change.
+
+For immediate event-driven publishing, deploy the updated `reference-only/code.gs` to the separate lab Apps Script Web App. The scheduled workflow still provides automatic publishing within its next five-minute check if the deployed script has not yet been updated. No extra GitHub token permission is required beyond the lab repository's existing Contents read/write permission.
 
 There is no page-text JSON file, folder, file ID, or text synchronization baseline in Google Drive. Drive remains in use for images, schedules, and albums only.
 

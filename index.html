@@ -1553,6 +1553,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     document.documentElement.removeAttribute("data-page-edits-pending");
     updateTeacherUI();
+    startPageChangesPolling();
 });
 
 
@@ -2519,10 +2520,17 @@ window.addEventListener('message', function(event) {
     ) {
         cacheCurrentPageChanges();
 
-        if (status) status.textContent = '';
+        const workflowStarted = result.workflowTriggered === true;
+        if (status) {
+            status.textContent = workflowStarted
+                ? 'تم حفظ التعديلات والتحقق منها، وبدأ تشغيل النشر التلقائي للمختبر.'
+                : 'تم حفظ التعديلات والتحقق منها. سيجري نشرها تلقائيًا في دورة التحقق المجدولة.';
+        }
         if (isLiveEditing) toggleLiveEditing();
 
-        alert('تم حفظ النصوص في مستودع المختبر والتحقق منها. تحديث المعاينة جارٍ.');
+        alert(workflowStarted
+            ? 'تم حفظ التعديل والتحقق منه، وبدأ النشر التلقائي. ستظهر النسخة الجديدة بعد اكتمال النشر.'
+            : 'تم حفظ التعديل والتحقق منه. سيعالجه النشر التلقائي المجدول دون الحاجة إلى Run workflow.');
         return;
     }
 
@@ -2649,6 +2657,9 @@ function assignPageEditIds() {
 
 const PAGE_CHANGES_CACHE_KEY = "obk_page_changes_cache_v1";
 let pageChangesResponseReceived = false;
+let pageChangesRequestInFlight = false;
+let pageChangesPollTimer = null;
+let pageChangesRequestTimeout = null;
 
 // اقبل التعديلات المحفوظة كما هي، بما فيها عناوين الاستعلامات ووصف قسم التابلت.
 function normalizeFixedPageChanges(changes) {
@@ -2747,10 +2758,26 @@ function cacheCurrentPageChanges() {
 }
 
 function loadSavedPageChanges() {
+    // امنع تداخل الطلبات، ولا تستهلك طلبات دورية عندما تكون الصفحة في الخلفية.
+    if (pageChangesRequestInFlight || document.visibilityState === "hidden") return;
+
     const scriptURL = GOOGLE_SCRIPT_URL;
     const script = document.createElement("script");
-
+    pageChangesRequestInFlight = true;
     pageChangesResponseReceived = false;
+
+    let settled = false;
+    const finishRequest = () => {
+        if (settled) return;
+        settled = true;
+        pageChangesRequestInFlight = false;
+        if (pageChangesRequestTimeout) {
+            clearTimeout(pageChangesRequestTimeout);
+            pageChangesRequestTimeout = null;
+        }
+        script.remove();
+    };
+
     script.src =
         scriptURL +
         "?action=pageChanges&callback=receivePageChanges&_=" +
@@ -2759,7 +2786,7 @@ function loadSavedPageChanges() {
     script.onerror = () => {
         console.error("تعذر تحميل تعديلات نصوص الموقع من الخادم؛ تم الإبقاء على آخر نسخة محلية إن وجدت.");
         document.documentElement.removeAttribute("data-page-edits-pending");
-        script.remove();
+        finishRequest();
     };
 
     script.onload = () => {
@@ -2768,10 +2795,34 @@ function loadSavedPageChanges() {
             console.error("وصل رد من خدمة التعديلات دون استدعاء receivePageChanges؛ لم يتم تأكيد تحميل التعديلات.");
         }
         document.documentElement.removeAttribute("data-page-edits-pending");
-        script.remove();
+        finishRequest();
     };
 
+    // لا تسمح لطلب متعطل بإيقاف التحديثات الدورية إلى أجل غير مسمى.
+    pageChangesRequestTimeout = setTimeout(() => {
+        console.warn("انتهت مهلة التحقق الدوري من تعديلات نصوص الموقع.");
+        finishRequest();
+    }, 15000);
+
     document.body.appendChild(script);
+}
+
+// حدّث الصفحات المفتوحة تلقائيًا كل 20 ثانية دون إعادة تحميل الصفحة.
+// عند عودة الزائر إلى التبويب، نفّذ تحققًا فوريًا بدل انتظار الدورة التالية.
+function startPageChangesPolling() {
+    if (pageChangesPollTimer !== null) return;
+
+    pageChangesPollTimer = setInterval(() => {
+        if (document.visibilityState === "visible") {
+            loadSavedPageChanges();
+        }
+    }, 20000);
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            loadSavedPageChanges();
+        }
+    });
 }
 
 function receivePageChanges(data) {

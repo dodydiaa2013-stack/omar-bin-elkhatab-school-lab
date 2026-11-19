@@ -3,6 +3,16 @@ name: Sync lab page text and publish automatically
 # This workflow builds from main, validates the result, then proposes and merges
 # the text-only update. Repository branch protection remains in force.
 on:
+  # مسار مباشر: Apps Script يرسل repository_dispatch بعد نجاح الحفظ والتحقق.
+  repository_dispatch:
+    types:
+      - lab-page-text-saved
+
+  # مسار احتياطي: إذا تعذر إرسال الحدث، افحص آخر نسخة محفوظة كل 5 دقائق.
+  schedule:
+    - cron: "*/5 * * * *"
+
+  # احتفظ بتشغيل push وworkflow_dispatch للتوافق والتشخيص اليدوي.
   push:
     branches:
       - "automation/lab-page-text-sync-input"
