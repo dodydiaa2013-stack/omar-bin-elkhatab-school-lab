@@ -2663,16 +2663,16 @@ function updateTextPreservingMarkup(element, savedText) {
         return true;
     }
 
-    const childElements = Array.from(element.children);
-    const childTexts = childElements.map(child => child.textContent || '');
+    // العناصر التي تحتوي نصًا (مثل الروابط) تُعامل كنص محمي يجب أن يبقى كما هو.
+    // العناصر الزخرفية الفارغة (مثل SVG icons) لا تُعامل كنص ولا تستهلك جزءًا منه.
+    const protectedChildren = Array.from(element.children).filter(child =>
+        (child.textContent || '').length > 0
+    );
     const segments = [];
     let cursor = 0;
 
-    for (const childText of childTexts) {
-        if (!childText) {
-            segments.push('');
-            continue;
-        }
+    for (const child of protectedChildren) {
+        const childText = child.textContent || '';
         const position = savedText.indexOf(childText, cursor);
         if (position < 0) return false;
         segments.push(savedText.slice(cursor, position));
@@ -2680,16 +2680,21 @@ function updateTextPreservingMarkup(element, savedText) {
     }
     segments.push(savedText.slice(cursor));
 
-    // وزّع المقاطع النصية حول العناصر الداخلية دون المساس بالعناصر نفسها.
-    let childIndex = 0;
+    // إذا وُجد نص على جانبي أيقونة فارغة داخل المقطع نفسه، فلا يمكن تحديد
+    // موضع الفصل بأمان من النص وحده؛ نرفض التغيير بدل تحريك الأيقونة أو النص.
+    let protectedIndex = 0;
     let pendingTextNodes = [];
+    let segmentUsed = false;
 
-    const flushTextNodes = (segment, beforeNode) => {
+    const flushTextNodes = (beforeNode) => {
+        const segment = segmentUsed ? '' : (segments[protectedIndex] || '');
         if (pendingTextNodes.length) {
             pendingTextNodes[0].nodeValue = segment;
             pendingTextNodes.slice(1).forEach(node => { node.nodeValue = ''; });
-        } else if (segment) {
-            element.insertBefore(document.createTextNode(segment), beforeNode || null);
+            segmentUsed = true;
+        } else if (segment && beforeNode) {
+            element.insertBefore(document.createTextNode(segment), beforeNode);
+            segmentUsed = true;
         }
         pendingTextNodes = [];
     };
@@ -2700,11 +2705,17 @@ function updateTextPreservingMarkup(element, savedText) {
             continue;
         }
         if (node.nodeType === Node.ELEMENT_NODE) {
-            flushTextNodes(segments[childIndex] || '', node);
-            childIndex++;
+            if ((node.textContent || '').length > 0) {
+                flushTextNodes(node);
+                protectedIndex++;
+                segmentUsed = false;
+            } else if (pendingTextNodes.length) {
+                // أبقِ النص في موضعه الأصلي قبل الأيقونة الفارغة.
+                flushTextNodes(node);
+            }
         }
     }
-    flushTextNodes(segments[childElements.length] || '', null);
+    flushTextNodes(null);
     return true;
 }
 
