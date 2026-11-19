@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-page-edits-pending="true">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -50,6 +50,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
 
     <style>
+        /* امنع وميض النص الأصلي قبل وصول نسخة النصوص المحفوظة، مع إبقاء التخطيط والصور ظاهرين. */
+        html[data-page-edits-pending="true"] body :is(h1, h2, h3, h4, h5, p, a, button, label, li, span, strong, em, small, td, th, i) {
+            color: transparent !important;
+            -webkit-text-fill-color: transparent !important;
+            text-shadow: none !important;
+        }
+
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 
@@ -247,6 +254,24 @@
     window.LAB_GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz3z04wldh7BZbIn8pfcjgjRLfXrV2RgEQrBkHkp5SzVXpl1DHTdADpPqud6kyehDNW/exec";
     window.LAB_GOOGLE_OAUTH_CLIENT_ID = "889693944069-ccstkm8sdj77p9k9qidhme2d5fhcfef4.apps.googleusercontent.com";
     window.__labBackendReady = false;
+
+    // لا نكشف النصوص الأصلية إلا بعد تطبيق رد المختبر أو انتهاء مهلة آمنة.
+    window.__initialPageChangesSettled = false;
+    window.finishInitialPageChangesLoad = function() {
+        if (window.__initialPageChangesSettled) return;
+        window.__initialPageChangesSettled = true;
+        document.documentElement.removeAttribute("data-page-edits-pending");
+        if (window.__initialPageChangesTimeout) {
+            clearTimeout(window.__initialPageChangesTimeout);
+            window.__initialPageChangesTimeout = null;
+        }
+    };
+    window.__initialPageChangesTimeout = setTimeout(() => {
+        if (!window.__initialPageChangesSettled) {
+            console.warn("انتهت مهلة تحميل تعديلات النصوص الأولية؛ ستظهر نسخة الصفحة الأصلية مؤقتًا.");
+            window.finishInitialPageChangesLoad();
+        }
+    }, 8000);
 
     // ابدأ طلب تعديلات النصوص أثناء قراءة الصفحة بدل انتظار DOMContentLoaded.
     // إذا وصلت الاستجابة قبل تجهيز عناصر الصفحة، احتفظ بها حتى تصبح جاهزة.
@@ -1552,7 +1577,7 @@ window.addEventListener('DOMContentLoaded', () => {
         loadSavedPageChanges();
     }
 
-    document.documentElement.removeAttribute("data-page-edits-pending");
+    // لا تكشف النصوص هنا؛ قد يكون طلب الخادم ما زال جاريًا.
     updateTeacherUI();
     startPageChangesPolling();
 });
@@ -2862,6 +2887,9 @@ function receivePageChanges(data) {
     if (!data || data.environment !== "LAB") {
         window.__labBackendReady = false;
         console.error("تم رفض استجابة النصوص: لم يتم تأكيد بيئة LAB. لن يُسمح بالحفظ.");
+        if (typeof window.finishInitialPageChangesLoad === "function") {
+            window.finishInitialPageChangesLoad();
+        }
         return false;
     }
 
@@ -2871,6 +2899,9 @@ function receivePageChanges(data) {
             ? (data.message || data.error)
             : "استجابة خادم المختبر لا تحتوي على قائمة تعديلات صحيحة.";
         console.error("تعذر استرجاع تعديلات نصوص المختبر:", message);
+        if (typeof window.finishInitialPageChangesLoad === "function") {
+            window.finishInitialPageChangesLoad();
+        }
         return false;
     }
 
@@ -2901,6 +2932,10 @@ function receivePageChanges(data) {
         }));
     } catch (error) {
         console.warn("تعذر حفظ نسخة محلية من تعديلات النصوص.", error);
+    }
+
+    if (typeof window.finishInitialPageChangesLoad === "function") {
+        window.finishInitialPageChangesLoad();
     }
 
     const messages = document.querySelectorAll('#tickerText .ticker-message');
