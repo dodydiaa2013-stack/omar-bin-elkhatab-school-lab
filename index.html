@@ -2843,7 +2843,6 @@ window.addEventListener('message', function(event) {
         reviewPollTimer = null;
 
         if (isLiveEditing) toggleLiveEditing();
-        alert(saveSuccessMessage);
 
         if (/^[A-Za-z0-9_-]{43}$/.test(reviewExpectedHash)) {
             scheduleLabPageReviewPoll(700);
