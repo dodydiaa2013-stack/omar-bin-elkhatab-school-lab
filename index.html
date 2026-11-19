@@ -2560,7 +2560,7 @@ async function saveAllPageChanges() {
             if(status) status.textContent='لم يصل تأكيد الحفظ. تحقق من الصفحة قبل إعادة المحاولة.';
             alert('لم يصل تأكيد من الخادم؛ لم يتم تأكيد حفظ التعديلات.');
         }
-    },20000);
+    },60000);
 }
 
 window.addEventListener('message', function(event) {
@@ -2583,7 +2583,7 @@ window.addEventListener('message', function(event) {
     const status = document.getElementById('googleSignInStatus');
     const result = data.result || {};
 
-    // لا نعلن النجاح إلا بعد إعادة قراءة النصوص والتحقق منها في GitHub.
+    // افصل بين نجاح حفظ GitHub وبين اكتمال إنشاء طلب المراجعة.
     if (
         result.environment === "LAB" &&
         result.success === true &&
@@ -2591,18 +2591,31 @@ window.addEventListener('message', function(event) {
         result.githubVerified === true
     ) {
         cacheCurrentPageChanges();
-
         const saveSuccessMessage = 'تم الحفظ والتحقق بنجاح في مستودع المختبر.';
-        const publishMessage = 'سيُنشأ طلب مراجعة للتحديث، ولن يتم نشره قبل مراجعته وموافقتك.';
+        let reviewMessage = '';
+        if (result.reviewPrCreated === true && result.reviewPrUrl) {
+            reviewMessage = 'تم التأكد من إنشاء/تحديث طلب المراجعة رقم #' +
+                (result.reviewPrNumber || '') + ': ' + result.reviewPrUrl +
+                ' ولن يتم النشر قبل مراجعته وموافقتك.';
+        } else if (result.workflowStatus === 'failed') {
+            reviewMessage = 'لكن فشل Workflow أثناء تجهيز طلب المراجعة. لم يتم تأكيد إنشاء الطلب.';
+            if (result.workflowRunUrl) reviewMessage += ' تفاصيل التشغيل: ' + result.workflowRunUrl;
+        } else if (result.workflowTriggered === true) {
+            reviewMessage = 'تم إطلاق Workflow، لكن لم يصل تأكيد إنشاء طلب المراجعة بعد. لا تعتبره منشأ حتى يظهر رابطه.';
+            if (result.workflowRunUrl) reviewMessage += ' متابعة التشغيل: ' + result.workflowRunUrl;
+        } else {
+            reviewMessage = 'تعذر إطلاق Workflow فورًا؛ الحفظ في GitHub مؤكد، لكن طلب المراجعة لم يتأكد. يوجد فحص مجدول احتياطي.';
+            if (result.workflowTriggerError) reviewMessage += ' السبب: ' + result.workflowTriggerError;
+        }
+        const fullMessage = saveSuccessMessage + ' ' + reviewMessage;
         if (status) {
-            status.textContent = saveSuccessMessage + ' ' + publishMessage;
+            status.textContent = fullMessage;
             status.classList.remove('hidden');
             status.setAttribute('role', 'status');
             status.setAttribute('aria-live', 'polite');
         }
         if (isLiveEditing) toggleLiveEditing();
-
-        alert(saveSuccessMessage + '\n' + publishMessage);
+        alert(fullMessage);
         return;
     }
 
@@ -2650,16 +2663,45 @@ function updateTextPreservingMarkup(element, savedText) {
         return true;
     }
 
-    const childElements = Array.from(element.children);
-    const childTexts = childElements.map(child => child.textContent || '');
+    // العناصر التي تحتوي نصًا (مثل الروابط) تُعامل كنص محمي يجب أن يبقى كما هو.
+    // العناصر الزخرفية الفارغة (مثل SVG icons) لا تُعامل كنص ولا تستهلك جزءًا منه.
+    const protectedChildren = Array.from(element.children).filter(child =>
+        (child.textContent || '').length > 0
+    );
     const segments = [];
+    const originalNodes = Array.from(element.childNodes);
     let cursor = 0;
 
-    for (const childText of childTexts) {
-        if (!childText) {
-            segments.push('');
-            continue;
+    // لا نعيد توزيع مقطع نصي حول أيقونة فارغة إذا كان له نص قبلها وبعدها؛
+    // موضع الفصل غير قابل للاستنتاج بأمان، لذا نرفض التطبيق دون تغيير DOM.
+    for (let i = 0; i < originalNodes.length; i++) {
+        const node = originalNodes[i];
+        if (node.nodeType !== Node.ELEMENT_NODE || (node.textContent || '').length > 0) continue;
+        let previousProtected = -1;
+        let nextProtected = originalNodes.length;
+        for (let j = i - 1; j >= 0; j--) {
+            if (originalNodes[j].nodeType === Node.ELEMENT_NODE && (originalNodes[j].textContent || '').length > 0) {
+                previousProtected = j;
+                break;
+            }
         }
+        for (let j = i + 1; j < originalNodes.length; j++) {
+            if (originalNodes[j].nodeType === Node.ELEMENT_NODE && (originalNodes[j].textContent || '').length > 0) {
+                nextProtected = j;
+                break;
+            }
+        }
+        const hasTextBefore = originalNodes.slice(previousProtected + 1, i).some(n =>
+            n.nodeType === Node.TEXT_NODE && n.nodeValue
+        );
+        const hasTextAfter = originalNodes.slice(i + 1, nextProtected).some(n =>
+            n.nodeType === Node.TEXT_NODE && n.nodeValue
+        );
+        if (hasTextBefore && hasTextAfter) return false;
+    }
+
+    for (const child of protectedChildren) {
+        const childText = child.textContent || '';
         const position = savedText.indexOf(childText, cursor);
         if (position < 0) return false;
         segments.push(savedText.slice(cursor, position));
@@ -2667,16 +2709,21 @@ function updateTextPreservingMarkup(element, savedText) {
     }
     segments.push(savedText.slice(cursor));
 
-    // وزّع المقاطع النصية حول العناصر الداخلية دون المساس بالعناصر نفسها.
-    let childIndex = 0;
+    // إذا وُجد نص على جانبي أيقونة فارغة داخل المقطع نفسه، فلا يمكن تحديد
+    // موضع الفصل بأمان من النص وحده؛ نرفض التغيير بدل تحريك الأيقونة أو النص.
+    let protectedIndex = 0;
     let pendingTextNodes = [];
+    let segmentUsed = false;
 
-    const flushTextNodes = (segment, beforeNode) => {
+    const flushTextNodes = (beforeNode) => {
+        const segment = segmentUsed ? '' : (segments[protectedIndex] || '');
         if (pendingTextNodes.length) {
             pendingTextNodes[0].nodeValue = segment;
             pendingTextNodes.slice(1).forEach(node => { node.nodeValue = ''; });
-        } else if (segment) {
-            element.insertBefore(document.createTextNode(segment), beforeNode || null);
+            segmentUsed = true;
+        } else if (segment && beforeNode) {
+            element.insertBefore(document.createTextNode(segment), beforeNode);
+            segmentUsed = true;
         }
         pendingTextNodes = [];
     };
@@ -2687,11 +2734,17 @@ function updateTextPreservingMarkup(element, savedText) {
             continue;
         }
         if (node.nodeType === Node.ELEMENT_NODE) {
-            flushTextNodes(segments[childIndex] || '', node);
-            childIndex++;
+            if ((node.textContent || '').length > 0) {
+                flushTextNodes(node);
+                protectedIndex++;
+                segmentUsed = false;
+            } else if (pendingTextNodes.length) {
+                // أبقِ النص في موضعه الأصلي قبل الأيقونة الفارغة.
+                flushTextNodes(node);
+            }
         }
     }
-    flushTextNodes(segments[childElements.length] || '', null);
+    flushTextNodes(null);
     return true;
 }
 

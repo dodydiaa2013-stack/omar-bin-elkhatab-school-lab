@@ -2518,7 +2518,7 @@ function readLabPageChangesFromGitHub_() {
   }
 
   const raw = Utilities.newBlob(
-    Utilities.base64Decode(file.content.replace(/\\s/g, ""))
+    Utilities.base64Decode(file.content.replace(/\s/g, ""))
   ).getDataAsString("UTF-8");
 
   const payload = validateLabPageChangesPayload_(JSON.parse(raw));
@@ -2626,6 +2626,82 @@ function triggerLabPageTextSyncWorkflow_(settings) {
   return true;
 }
 
+
+/**
+ * ينتظر نتيجة Workflow الفعلية ويتحقق من وجود PR يحتوي آخر نسخة محفوظة.
+ * قبول repository_dispatch وحده لا يعني أن طلب المراجعة أُنشئ.
+ */
+function waitForLabPageReviewPR_(settings, expectedPayload, dispatchStartedAt) {
+  const workflowRunsUrl = "https://api.github.com/repos/" + settings.repository +
+    "/actions/workflows/sync-lab-page-texts.yml/runs?event=repository_dispatch&per_page=10";
+  const pullsUrl = "https://api.github.com/repos/" + settings.repository +
+    "/pulls?state=open&head=dodydiaa2013-stack:automation/lab-page-text-sync&base=main";
+  const reviewBranch = "automation/lab-page-text-sync";
+  const startedMs = new Date(dispatchStartedAt).getTime();
+  let lastRun = null;
+
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const runsResponse = UrlFetchApp.fetch(workflowRunsUrl, {
+      method: "get", headers: settings.headers, muteHttpExceptions: true
+    });
+    if (runsResponse.getResponseCode() !== 200) {
+      return { status: "unverified", created: false,
+        message: "تم إطلاق Workflow، لكن تعذرت قراءة حالة تشغيله من GitHub." };
+    }
+    const runsData = JSON.parse(runsResponse.getContentText() || "{}");
+    const matchingRuns = (runsData.workflow_runs || []).filter(function(run) {
+      return run.event === "repository_dispatch" &&
+        run.path === ".github/workflows/sync-lab-page-texts.yml" &&
+        new Date(run.created_at).getTime() >= startedMs - 5000;
+    });
+    matchingRuns.sort(function(a, b) {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+    lastRun = matchingRuns[0] || lastRun;
+
+    if (lastRun && lastRun.status === "completed") {
+      if (lastRun.conclusion !== "success") {
+        return { status: "failed", created: false,
+          runUrl: lastRun.html_url || "",
+          message: "انتهى Workflow دون نجاح (" + (lastRun.conclusion || "unknown") + ")." };
+      }
+      const pullsResponse = UrlFetchApp.fetch(pullsUrl, {
+        method: "get", headers: settings.headers, muteHttpExceptions: true
+      });
+      if (pullsResponse.getResponseCode() === 200) {
+        const pulls = JSON.parse(pullsResponse.getContentText() || "[]");
+        const reviewPR = pulls.find(function(pr) {
+          return pr && pr.state === "open" && pr.head &&
+            pr.head.ref === reviewBranch && pr.base && pr.base.ref === "main";
+        });
+        if (reviewPR) {
+          const fileUrl = "https://api.github.com/repos/" + settings.repository +
+            "/contents/" + settings.path + "?ref=" + encodeURIComponent(reviewBranch);
+          const fileResponse = UrlFetchApp.fetch(fileUrl, {
+            method: "get", headers: settings.headers, muteHttpExceptions: true
+          });
+          if (fileResponse.getResponseCode() === 200) {
+            const file = JSON.parse(fileResponse.getContentText() || "{}");
+            if (file.encoding === "base64" && file.content) {
+              const raw = Utilities.newBlob(Utilities.base64Decode(file.content.replace(/\s/g, "")))
+                .getDataAsString("UTF-8");
+              const prPayload = validateLabPageChangesPayload_(JSON.parse(raw));
+              if (getPageChangesSyncHash_(prPayload) === getPageChangesSyncHash_(expectedPayload)) {
+                return { status: "confirmed", created: true,
+                  number: reviewPR.number, url: reviewPR.html_url || "",
+                  runUrl: lastRun.html_url || "" };
+              }
+            }
+          }
+        }
+      }
+    }
+    if (attempt < 11) Utilities.sleep(1500);
+  }
+  return { status: "pending", created: false,
+    runUrl: lastRun && lastRun.html_url ? lastRun.html_url : "",
+    message: "تم إطلاق Workflow، لكن لم يكتمل بعد تأكيد طلب المراجعة واحتوائه على أحدث النصوص." };
+}
 
 function savePageChanges(p) {
   p = p || {};
@@ -2829,12 +2905,17 @@ function savePageChanges(p) {
     // فشل إطلاق الحدث لا يلغي نجاح الحفظ؛ يوجد تشغيل مجدول احتياطيًا.
     let workflowTriggered = false;
     let workflowTriggerError = "";
-
+    let reviewStatus = { status: "not_started", created: false };
     try {
+      const dispatchStartedAt = new Date().toISOString();
       workflowTriggered = triggerLabPageTextSyncWorkflow_(verified.settings);
+      if (workflowTriggered) {
+        reviewStatus = waitForLabPageReviewPR_(verified.settings, payloadToSave, dispatchStartedAt);
+      }
     } catch (dispatchError) {
       workflowTriggerError = dispatchError.message || String(dispatchError);
-      console.error("تعذر إطلاق مزامنة نصوص المختبر فورًا: " + workflowTriggerError);
+      reviewStatus = { status: "dispatch_failed", created: false };
+      console.error("تعذر إطلاق أو تأكيد مزامنة نصوص المختبر: " + workflowTriggerError);
     }
 
     return pageChangesPostMessage(p, {
@@ -2844,8 +2925,16 @@ function savePageChanges(p) {
       githubVerified: true,
       workflowTriggered: workflowTriggered,
       workflowTriggerError: workflowTriggerError,
+      workflowStatus: reviewStatus.status,
+      reviewPrCreated: reviewStatus.created === true,
+      reviewPrNumber: reviewStatus.number || null,
+      reviewPrUrl: reviewStatus.url || "",
+      workflowRunUrl: reviewStatus.runUrl || "",
+      workflowStatusMessage: reviewStatus.message || "",
       htmlUpdatePending: true,
-      message: "تم حفظ النصوص والتحقق منها في مستودع المختبر. سيُنشأ طلب مراجعة، ولن يتم تحديث الصفحة المنشورة قبل الموافقة عليه.",
+      message: reviewStatus.created
+        ? "تم حفظ النصوص والتحقق منها، وتم التأكد من وجود طلب المراجعة الذي يحتوي أحدث النصوص."
+        : "تم حفظ النصوص والتحقق منها في مستودع المختبر، لكن لم يتم تأكيد إنشاء طلب المراجعة بعد.",
       count: finalChanges.length
     });
 
