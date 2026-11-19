@@ -2572,6 +2572,52 @@ function syncPageChangesFromGitHub_() {
 }
 
 
+/**
+ * يطلب تشغيل مزامنة النصوص فور نجاح الحفظ والتحقق من GitHub.
+ * يتطلب GitHub token بصلاحية Contents: write على مستودع المختبر.
+ */
+function triggerLabPageTextSyncWorkflow_(settings) {
+  const dispatchUrl =
+    "https://api.github.com/repos/" +
+    settings.repository +
+    "/dispatches";
+
+  const response = UrlFetchApp.fetch(dispatchUrl, {
+    method: "post",
+    contentType: "application/json",
+    headers: {
+      Authorization: "Bearer " + settings.token,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    },
+    payload: JSON.stringify({
+      event_type: "lab-page-text-saved",
+      client_payload: {
+        branch: settings.branch,
+        path: settings.path
+      }
+    }),
+    muteHttpExceptions: true
+  });
+
+  const status = response.getResponseCode();
+  if (status !== 204) {
+    let detail = "";
+    try {
+      const body = JSON.parse(response.getContentText() || "{}");
+      detail = String(body.message || "").slice(0, 160);
+    } catch (ignored) {}
+
+    throw new Error(
+      "تعذر بدء النشر التلقائي من GitHub. رمز الاستجابة: " +
+      status + (detail ? " - " + detail : "")
+    );
+  }
+
+  return true;
+}
+
+
 function savePageChanges(p) {
   p = p || {};
 
@@ -2767,12 +2813,28 @@ function savePageChanges(p) {
       throw new Error("لم تتطابق النصوص بعد إعادة قراءتها من GitHub؛ لم يتم تأكيد الحفظ.");
     }
 
+    // ابدأ Workflow فور تأكيد أن GitHub حفظ النصوص كما هي.
+    // فشل إطلاق الحدث لا يلغي نجاح الحفظ؛ يوجد تشغيل مجدول احتياطيًا.
+    let workflowTriggered = false;
+    let workflowTriggerError = "";
+
+    try {
+      workflowTriggered = triggerLabPageTextSyncWorkflow_(verified.settings);
+    } catch (dispatchError) {
+      workflowTriggerError = dispatchError.message || String(dispatchError);
+      console.error("تعذر إطلاق مزامنة نصوص المختبر فورًا: " + workflowTriggerError);
+    }
+
     return pageChangesPostMessage(p, {
       success: true,
       githubSaved: true,
       githubVerified: true,
+      workflowTriggered: workflowTriggered,
+      workflowTriggerError: workflowTriggerError,
       htmlUpdatePending: true,
-      message: "تم حفظ النصوص في GitHub والتحقق منها. تحديث نسخة المعاينة جارٍ.",
+      message: workflowTriggered
+        ? "تم حفظ النصوص والتحقق منها وبدء النشر التلقائي."
+        : "تم حفظ النصوص والتحقق منها. سيعالجها التشغيل التلقائي المجدول.",
       count: finalChanges.length
     });
 
