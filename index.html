@@ -2753,7 +2753,7 @@ function renderLabReviewStatus(result) {
     }
 
     status.replaceChildren(
-        document.createTextNode('تم الحفظ والتحقق بنجاح في مستودع المختبر. ')
+        document.createTextNode('تم الحفظ بنجاح. ')
     );
 
     if (result && result.status === 'confirmed' &&
@@ -2852,7 +2852,7 @@ window.addEventListener('message', function(event) {
         cacheCurrentPageChanges();
 
         const saveSuccessMessage =
-            'تم الحفظ والتحقق بنجاح في مستودع المختبر. يجري التحقق من طلب المراجعة بصورة مستقلة.';
+            'تم الحفظ بنجاح.';
         if (status) {
             status.textContent = saveSuccessMessage;
             status.classList.remove('hidden');
