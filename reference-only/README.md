@@ -57,7 +57,8 @@
 
 ## الملفات
 
-- `code.gs`: قالب خادم Apps Script التجريبي المعزول.
+- `code.gs`: قالب خادم Apps Script التجريبي المعزول المعتمد للنشر في مشروع المختبر.
+- `كود المختبر.gs`: نسخة عربية كاملة من كود المختبر نفسه، مع ترك قيم CLIENT_ID وALLOWED_EMAIL وRECOVERY_EMAIL فارغة لتعبئتها داخل مشروع Apps Script فقط.
 - `الكود.gs`: نسخة مرجعية منفصلة للمراجعة فقط.
 - `scripts/sync-lab-page-texts.mjs`: أداة تثبيت المعرّفات والتحقق من النصوص.
 - `.github/workflows/sync-lab-page-texts.yml`: يتحقق من التغييرات وينشئ طلب مراجعة Draft دون دمج تلقائي.
