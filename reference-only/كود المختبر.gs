@@ -2686,7 +2686,7 @@ function savePageChanges(p) {
     "tablet-support-title", "schedules-title",
     "schedules-description", "alerts-title", "alerts-description",
     "republic-header", "academic-year", "header-manager",
-    "home-intro", "footer-leadership", "footer-school-name",
+    "home-intro", "footer-leadership", "footer-school-name", "footer-copyright",
     "quick-links-title", "quick-results-link", "quick-tablet-link",
     "quick-schedules-link", "quick-gallery-link",
     "quick-student-queries-link", "quick-leaders-link",
