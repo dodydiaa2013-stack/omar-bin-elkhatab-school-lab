@@ -2771,7 +2771,7 @@ function checkLabPageReviewStatus(p) {
     }
 
     const raw = Utilities.newBlob(
-      Utilities.base64Decode(String(file.content).replace(/\\s/g, ""))
+      Utilities.base64Decode(String(file.content).replace(/\s/g, ""))
     ).getDataAsString("UTF-8");
     const actualPayload = validateLabPageChangesPayload_(JSON.parse(raw));
     const actualHash = getPageChangesSyncHash_(actualPayload);
