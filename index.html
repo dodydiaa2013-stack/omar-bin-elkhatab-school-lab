@@ -2432,6 +2432,7 @@ window.addEventListener('DOMContentLoaded', () => {
 let pageChangesTimeout = null;
 let pendingPageChangesSnapshot = null;
 let pendingReviewStatusNonce = null;
+let pendingReviewStatusHash = "";
 let reviewStatusTimeout = null;
 let reviewPollTimer = null;
 let reviewPollAttempts = 0;
@@ -2630,6 +2631,7 @@ function requestLabPageReviewStatus() {
         ? crypto.randomUUID()
         : String(Date.now()) + '-' + Math.random().toString(36).slice(2);
     pendingReviewStatusNonce = nonce;
+    pendingReviewStatusHash = reviewExpectedHash;
 
     let frame = document.getElementById('pageReviewStatusFrame');
     if (!frame) {
@@ -2679,7 +2681,15 @@ function requestLabPageReviewStatus() {
 
 function renderLabReviewStatus(result) {
     const status = document.getElementById('googleSignInStatus');
-    if (!status) return;
+    if (!status) {
+        if (result && result.status === 'confirmed' &&
+            result.created === true && result.url) {
+            reviewExpectedHash = '';
+            return;
+        }
+        scheduleLabPageReviewPoll(2500);
+        return;
+    }
 
     status.replaceChildren(
         document.createTextNode('تم الحفظ والتحقق بنجاح في مستودع المختبر. ')
@@ -2729,6 +2739,13 @@ window.addEventListener('message', function(event) {
         if (reviewStatusTimeout) clearTimeout(reviewStatusTimeout);
         reviewStatusTimeout = null;
         pendingReviewStatusNonce = null;
+        const requestedHash = pendingReviewStatusHash;
+        pendingReviewStatusHash = "";
+
+        if (requestedHash !== reviewExpectedHash) {
+            scheduleLabPageReviewPoll(250);
+            return;
+        }
 
         const result = data.result || {};
         if (result.environment === 'LAB' &&
