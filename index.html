@@ -2256,7 +2256,7 @@ window.addEventListener('DOMContentLoaded', () => {
             const token = String(window.adminSessionToken || '');
             if (!token) {
                 clearAdminClientSession_();
-                const status = getPageChangesSaveStatus();
+                const status = document.getElementById('googleSignInStatus');
                 if (status) status.textContent = 'تم تسجيل الخروج من الموقع.';
                 return;
             }
@@ -2300,7 +2300,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
                 if (data.result && data.result.success) {
                     clearAdminClientSession_();
-                    const status = getPageChangesSaveStatus();
+                    const status = document.getElementById('googleSignInStatus');
                     if (status) status.textContent = 'تم تسجيل الخروج من الموقع بنجاح.';
                     alert('تم تسجيل الخروج بنجاح.');
                 } else {
