@@ -2526,6 +2526,14 @@ function toggleLiveEditing() {
     }
 }
 
+function clearDuplicatePageSaveConfirmation() {
+    // لا نعرض تأكيد حفظ النصوص في حالة Google الخارجية؛ التأكيد الوحيد يكون في شريط المطور.
+    const externalStatus = document.getElementById('googleSignInStatus');
+    if (externalStatus && /حفظ|تمت العملية|نجاح|تأكيد/.test(externalStatus.textContent || '')) {
+        externalStatus.textContent = '';
+    }
+}
+
 function getPageChangesSaveStatus() {
     const status = document.getElementById('pageChangesSaveStatus');
     if (status) {
@@ -2640,6 +2648,7 @@ async function saveAllPageChanges() {
         clearTimeout(pageChangesStatusHideTimer);
         pageChangesStatusHideTimer = null;
     }
+    clearDuplicatePageSaveConfirmation();
     const status = getPageChangesSaveStatus();
     if (status) status.textContent = 'تم إرسال طلب الحفظ، في انتظار تأكيد حفظ النصوص في GitHub...';
     document.body.appendChild(form);
@@ -2821,6 +2830,7 @@ window.addEventListener('message', function(event) {
         pendingPageChangesSnapshot = null;
         cacheCurrentPageChanges();
 
+        clearDuplicatePageSaveConfirmation();
         const saveSuccessMessage = 'تم الحفظ بنجاح.';
         if (status) {
             status.textContent = saveSuccessMessage;
