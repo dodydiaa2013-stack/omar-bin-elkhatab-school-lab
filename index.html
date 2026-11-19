@@ -2449,37 +2449,45 @@ async function saveAllPageChanges() {
         document.querySelectorAll('[data-page-edit-id]')
     );
 
-    // قد تحتوي الصفحة على عناصر مكررة بالمعرّف نفسه بعد إعادة إنشاء
-    // بعض مكوّنات الواجهة. لا نرسل المعرّف مرتين إلى الخادم.
-    // نحتفظ بأول عنصر كمرجع ثابت، ونستخدم العنصر النشط إن كان هو
-    // أحد العناصر المتكررة حتى لا نفقد النص الذي يجري تحريره.
-    const changesById = new Map();
+    // لا نحذف التكرارات بصمت؛ لأن ذلك قد يحفظ نص عنصر ويهمل عنصرًا آخر.
+    // يجب إصلاح المعرّف المكرر قبل إرسال أي طلب، حمايةً للتعديلات المحفوظة.
+    const elementsById = new Map();
     const duplicateIds = new Set();
 
     editableElements.forEach(el => {
         const id = el.getAttribute('data-page-edit-id');
-        const text = el.textContent.trim();
-        if (!id || text.length > 10000) return;
+        if (!id) return;
 
-        if (!changesById.has(id)) {
-            changesById.set(id, { id, text });
-            return;
-        }
-
-        duplicateIds.add(id);
-        if (document.activeElement === el) {
-            changesById.set(id, { id, text });
+        if (elementsById.has(id)) {
+            duplicateIds.add(id);
+        } else {
+            elementsById.set(id, el);
         }
     });
 
-    const changes = Array.from(changesById.values());
-
     if (duplicateIds.size) {
-        console.warn(
-            'تم اكتشاف معرّفات نصوص مكررة واستبعاد تكرارها قبل الحفظ:',
-            Array.from(duplicateIds)
+        const ids = Array.from(duplicateIds);
+        console.error('تعذر الحفظ بسبب تكرار معرّفات النصوص:', ids);
+        alert(
+            'لم يتم إرسال الحفظ؛ يوجد معرّف نص مكرر على أكثر من عنصر. ' +
+            'تم إيقاف العملية لحماية النصوص من الاستبدال الخاطئ. ' +
+            'المعرّفات المتكررة: ' + ids.slice(0, 5).join('، ')
         );
+        const status = document.getElementById('googleSignInStatus');
+        if (status) {
+            status.textContent = 'تعذر الحفظ: أصلح المعرّفات المكررة أولًا.';
+            status.classList.remove('hidden');
+            status.setAttribute('role', 'alert');
+        }
+        return;
     }
+
+    const changes = editableElements
+        .map(el => ({
+            id: el.getAttribute('data-page-edit-id'),
+            text: el.textContent.trim()
+        }))
+        .filter(item => item.id && item.text.length <= 10000);
 
     if (!changes.length) {
         alert('لا توجد نصوص قابلة للحفظ.');
@@ -2718,9 +2726,21 @@ function applyPageChangesList(changes) {
             return;
         }
 
-        const element = document.querySelector(
+        const matchingElements = document.querySelectorAll(
             '[data-page-edit-id="' + CSS.escape(item.id) + '"]'
         );
+
+        if (matchingElements.length > 1) {
+            stats.invalid++;
+            console.error(
+                "تم تجاهل تعديل يحمل معرّفًا مكررًا على أكثر من عنصر:",
+                item.id,
+                matchingElements.length
+            );
+            return;
+        }
+
+        const element = matchingElements[0];
 
         if (!element) {
             stats.missing++;
