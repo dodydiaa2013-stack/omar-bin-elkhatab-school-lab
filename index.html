@@ -2431,6 +2431,11 @@ window.addEventListener('DOMContentLoaded', () => {
         let pendingPageChangesNonce = null;
 let pageChangesTimeout = null;
 let pendingPageChangesSnapshot = null;
+let pendingReviewStatusNonce = null;
+let reviewStatusTimeout = null;
+let reviewPollTimer = null;
+let reviewPollAttempts = 0;
+let reviewExpectedHash = "";
 
 // يحتفظ بالنصوص التي عدّلها المسؤول محليًا حتى يثبت حفظها في GitHub.
 // يمنع التحديث الدوري من استبدال تعديل غير محفوظ بنسخة الخادم الأقدم.
@@ -2584,7 +2589,7 @@ async function saveAllPageChanges() {
     });
     document.body.appendChild(form); form.submit(); form.remove();
     const status=document.getElementById('googleSignInStatus');
-    if(status) status.textContent='تم إرسال طلب الحفظ، في انتظار تأكيد الخادم...';
+    if(status) status.textContent='تم إرسال طلب الحفظ، في انتظار تأكيد حفظ النصوص في GitHub...';
     pageChangesTimeout=setTimeout(() => {
         if(pendingPageChangesNonce===nonce) {
             pendingPageChangesNonce=null;
@@ -2595,19 +2600,156 @@ async function saveAllPageChanges() {
     },60000);
 }
 
-window.addEventListener('message', function(event) {
-    const responseFrame = document.getElementById('pageChangesUploadFrame');
+function scheduleLabPageReviewPoll(delay = 2500) {
+    if (reviewPollTimer) clearTimeout(reviewPollTimer);
+    reviewPollTimer = setTimeout(() => {
+        reviewPollTimer = null;
+        requestLabPageReviewStatus();
+    }, delay);
+}
 
-    if (!responseFrame || !isTrustedAppsScriptMessage(event)) return;
+function requestLabPageReviewStatus() {
+    if (!reviewExpectedHash || pendingReviewStatusNonce) return;
+
+    if (reviewPollAttempts >= 20) {
+        const status = document.getElementById('googleSignInStatus');
+        if (status) {
+            status.textContent =
+                'تم حفظ النصوص والتحقق منها. ما زال تأكيد طلب المراجعة قيد الانتظار؛ لم نعتبره منشأ دون رابط مؤكد.';
+        }
+        return;
+    }
+
+    if (!hasDualAdminAuthorization()) {
+        scheduleLabPageReviewPoll(5000);
+        return;
+    }
+
+    reviewPollAttempts++;
+    const nonce = (window.crypto && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+    pendingReviewStatusNonce = nonce;
+
+    let frame = document.getElementById('pageReviewStatusFrame');
+    if (!frame) {
+        frame = document.createElement('iframe');
+        frame.id = 'pageReviewStatusFrame';
+        frame.name = 'pageReviewStatusFrame';
+        frame.style.display = 'none';
+        document.body.appendChild(frame);
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = GOOGLE_SCRIPT_URL;
+    form.target = 'pageReviewStatusFrame';
+    form.style.display = 'none';
+
+    const fields = {
+        action: 'checkLabPageReviewStatus',
+        environment: 'LAB',
+        googleUploadToken: googleUploadToken,
+        adminSessionToken: window.adminSessionToken,
+        nonce: nonce,
+        origin: location.origin,
+        expectedHash: reviewExpectedHash
+    };
+
+    Object.entries(fields).forEach(([name, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+
+    if (reviewStatusTimeout) clearTimeout(reviewStatusTimeout);
+    reviewStatusTimeout = setTimeout(() => {
+        if (pendingReviewStatusNonce === nonce) {
+            pendingReviewStatusNonce = null;
+            scheduleLabPageReviewPoll(3500);
+        }
+    }, 12000);
+}
+
+function renderLabReviewStatus(result) {
+    const status = document.getElementById('googleSignInStatus');
+    if (!status) return;
+
+    status.replaceChildren(
+        document.createTextNode('تم الحفظ والتحقق بنجاح في مستودع المختبر. ')
+    );
+
+    if (result && result.status === 'confirmed' &&
+        result.created === true && result.url) {
+        status.appendChild(document.createTextNode(
+            'تم التأكد من طلب المراجعة رقم #' + (result.number || '') + ': '
+        ));
+        const link = document.createElement('a');
+        link.href = result.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = result.url;
+        link.style.textDecoration = 'underline';
+        status.appendChild(link);
+        status.appendChild(document.createTextNode(
+            ' ولن يتم النشر قبل مراجعته وموافقتك.'
+        ));
+        reviewExpectedHash = '';
+        if (reviewPollTimer) clearTimeout(reviewPollTimer);
+        reviewPollTimer = null;
+        return;
+    }
+
+    status.appendChild(document.createTextNode(
+        'ما زال تأكيد طلب المراجعة قيد الانتظار. لن نعتبره منشأ قبل التحقق من رابطه ومحتواه.'
+    ));
+    scheduleLabPageReviewPoll(2500);
+}
+
+window.addEventListener('message', function(event) {
+    if (!isTrustedAppsScriptMessage(event)) return;
 
     const data = event.data;
+    if (!data) return;
 
-    if (
-        !data ||
+    // ردود فحص طلب المراجعة مستقلة عن طلب الحفظ ولا تعطل رسالة الحفظ السريعة.
+    if (data.type === 'labPageReviewStatusResult') {
+        const reviewFrame = document.getElementById('pageReviewStatusFrame');
+        if (!reviewFrame ||
+            !isTrustedAppsScriptMessage(event, reviewFrame.contentWindow) ||
+            !pendingReviewStatusNonce ||
+            data.nonce !== pendingReviewStatusNonce) return;
+
+        if (reviewStatusTimeout) clearTimeout(reviewStatusTimeout);
+        reviewStatusTimeout = null;
+        pendingReviewStatusNonce = null;
+
+        const result = data.result || {};
+        if (result.environment === 'LAB' &&
+            result.success === true &&
+            result.status === 'confirmed' &&
+            result.created === true &&
+            result.url) {
+            renderLabReviewStatus(result);
+            return;
+        }
+
+        renderLabReviewStatus(result);
+        return;
+    }
+
+    const responseFrame = document.getElementById('pageChangesUploadFrame');
+    if (!responseFrame ||
+        !isTrustedAppsScriptMessage(event, responseFrame.contentWindow) ||
         data.type !== 'savePageChangesResult' ||
         !pendingPageChangesNonce ||
-        data.nonce !== pendingPageChangesNonce
-    ) return;
+        data.nonce !== pendingPageChangesNonce) return;
 
     clearTimeout(pageChangesTimeout);
     pendingPageChangesNonce = null;
@@ -2615,14 +2757,12 @@ window.addEventListener('message', function(event) {
     const status = document.getElementById('googleSignInStatus');
     const result = data.result || {};
 
-    // افصل بين نجاح حفظ GitHub وبين اكتمال إنشاء طلب المراجعة.
     if (
         result.environment === "LAB" &&
         result.success === true &&
         result.githubSaved === true &&
         result.githubVerified === true
     ) {
-        // امسح فقط القيم التي تأكد حفظها ولم تتغير أثناء انتظار الرد.
         if (pendingPageChangesSnapshot) {
             pendingPageChangesSnapshot.forEach((submittedText, id) => {
                 if (unsavedPageTextChanges.get(id) === submittedText) {
@@ -2632,31 +2772,29 @@ window.addEventListener('message', function(event) {
         }
         pendingPageChangesSnapshot = null;
         cacheCurrentPageChanges();
-        const saveSuccessMessage = 'تم الحفظ والتحقق بنجاح في مستودع المختبر.';
-        let reviewMessage = '';
-        if (result.reviewPrCreated === true && result.reviewPrUrl) {
-            reviewMessage = 'تم التأكد من إنشاء/تحديث طلب المراجعة رقم #' +
-                (result.reviewPrNumber || '') + ': ' + result.reviewPrUrl +
-                ' ولن يتم النشر قبل مراجعته وموافقتك.';
-        } else if (result.workflowStatus === 'failed') {
-            reviewMessage = 'لكن فشل Workflow أثناء تجهيز طلب المراجعة. لم يتم تأكيد إنشاء الطلب.';
-            if (result.workflowRunUrl) reviewMessage += ' تفاصيل التشغيل: ' + result.workflowRunUrl;
-        } else if (result.workflowTriggered === true) {
-            reviewMessage = 'تم إطلاق Workflow، لكن لم يصل تأكيد إنشاء طلب المراجعة بعد. لا تعتبره منشأ حتى يظهر رابطه.';
-            if (result.workflowRunUrl) reviewMessage += ' متابعة التشغيل: ' + result.workflowRunUrl;
-        } else {
-            reviewMessage = 'تعذر إطلاق Workflow فورًا؛ الحفظ في GitHub مؤكد، لكن طلب المراجعة لم يتأكد. يوجد فحص مجدول احتياطي.';
-            if (result.workflowTriggerError) reviewMessage += ' السبب: ' + result.workflowTriggerError;
-        }
-        const fullMessage = saveSuccessMessage + ' ' + reviewMessage;
+
+        const saveSuccessMessage =
+            'تم الحفظ والتحقق بنجاح في مستودع المختبر. يجري التحقق من طلب المراجعة بصورة مستقلة.';
         if (status) {
-            status.textContent = fullMessage;
+            status.textContent = saveSuccessMessage;
             status.classList.remove('hidden');
             status.setAttribute('role', 'status');
             status.setAttribute('aria-live', 'polite');
         }
+
+        reviewExpectedHash = String(result.reviewExpectedHash || '');
+        reviewPollAttempts = 0;
+        if (reviewPollTimer) clearTimeout(reviewPollTimer);
+        reviewPollTimer = null;
+
         if (isLiveEditing) toggleLiveEditing();
-        alert(fullMessage);
+        alert(saveSuccessMessage);
+
+        if (/^[A-Za-z0-9_-]{43}$/.test(reviewExpectedHash)) {
+            scheduleLabPageReviewPoll(700);
+        } else if (status) {
+            status.textContent += ' تعذر بدء فحص طلب المراجعة لأن بصمة النصوص غير صالحة.';
+        }
         return;
     }
 
@@ -2669,7 +2807,6 @@ window.addEventListener('message', function(event) {
     if (status) status.textContent = message;
     alert('لم يتم تأكيد حفظ التعديلات: ' + message);
 });
-
 function assignPageEditIds() {
     // جميع معرّفات النصوص الحالية مثبتة صراحةً داخل HTML.
     // لا ننشئ معرّفات مبنية على ترتيب العناصر؛ لأن ذلك يغيّرها عند تعديل التصميم.
