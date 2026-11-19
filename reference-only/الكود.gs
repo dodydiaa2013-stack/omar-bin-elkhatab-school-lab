@@ -2577,6 +2577,7 @@ function getSavedPageChanges() {
 
 
 
+
 function savePageChanges(p) {
   p = p || {};
 
@@ -2625,7 +2626,8 @@ function savePageChanges(p) {
     "server-tip-3", "server-tip-4", "tablet-support-tip-1",
     "tablet-support-tip-2", "tablet-support-tip-3",
     "tablet-support-tip-4", "ticker-message-1",
-    "ticker-message-2", "ticker-message-3", "ticker-message-4"
+    "ticker-message-2", "ticker-message-3", "ticker-message-4",
+    "footer-copyright"
   ];
 
   const cleanChanges = [];
@@ -2766,6 +2768,7 @@ function savePageChanges(p) {
     count: cleanChanges.length
   });
 }
+
 
 function syncPageChangesToGitHub_(savedPayload) {
   const lock = LockService.getScriptLock();
