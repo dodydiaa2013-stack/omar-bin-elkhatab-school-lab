@@ -426,6 +426,7 @@
             <button onclick="saveAllPageChanges()" class="bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1.5 rounded-lg transition flex items-center gap-1">
                 <i class="fa-solid fa-floppy-disk"></i> حفظ التعديلات
             </button>
+            <p id="pageChangesSaveStatus" class="hidden basis-full w-full rounded-lg border border-amber-700/40 bg-white/90 px-3 py-2 text-xs font-bold text-slate-800" role="status" aria-live="polite"></p>
             <button onclick="exportUpdatedHTML()" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg transition flex items-center gap-1">
                 <i class="fa-solid fa-file-code"></i> تحميل كود HTML المعدل
             </button>
@@ -2488,6 +2489,16 @@ function toggleLiveEditing() {
     }
 }
 
+function getPageChangesSaveStatus() {
+    const status = document.getElementById('pageChangesSaveStatus');
+    if (status) {
+        status.classList.remove('hidden');
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+    }
+    return status;
+}
+
 async function saveAllPageChanges() {
     if (window.__labBackendReady !== true) {
         alert("تم إيقاف الحفظ لحماية الموقع: لم يتم تأكيد الاتصال بخادم المختبر المنفصل. لا تستخدم رابط خادم الإنتاج.");
@@ -2533,7 +2544,7 @@ async function saveAllPageChanges() {
             'تم إيقاف العملية لحماية النصوص من الاستبدال الخاطئ. ' +
             'المعرّفات المتكررة: ' + ids.slice(0, 5).join('، ')
         );
-        const status = document.getElementById('googleSignInStatus');
+        const status = getPageChangesSaveStatus();
         if (status) {
             status.textContent = 'تعذر الحفظ: أصلح المعرّفات المكررة أولًا.';
             status.classList.remove('hidden');
@@ -2588,9 +2599,11 @@ async function saveAllPageChanges() {
     Object.entries(fields).forEach(([name,value]) => {
         const input=document.createElement('input'); input.type='hidden'; input.name=name; input.value=value; form.appendChild(input);
     });
-    document.body.appendChild(form); form.submit(); form.remove();
-    const status=document.getElementById('googleSignInStatus');
-    if(status) status.textContent='تم إرسال طلب الحفظ، في انتظار تأكيد حفظ النصوص في GitHub...';
+    const status = getPageChangesSaveStatus();
+    if (status) status.textContent = 'تم إرسال طلب الحفظ، في انتظار تأكيد حفظ النصوص في GitHub...';
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
     pageChangesTimeout=setTimeout(() => {
         if(pendingPageChangesNonce===nonce) {
             // لا نُسقط nonce أو snapshot عند انتهاء المهلة:
@@ -2619,7 +2632,7 @@ function requestLabPageReviewStatus() {
     if (!reviewExpectedHash || pendingReviewStatusNonce) return;
 
     if (reviewPollAttempts >= 20) {
-        const status = document.getElementById('googleSignInStatus');
+        const status = getPageChangesSaveStatus();
         if (status) {
             status.textContent =
                 'تم حفظ النصوص والتحقق منها. ما زال تأكيد طلب المراجعة قيد الانتظار؛ لم نعتبره منشأ دون رابط مؤكد. سيُعاد الفحص تلقائيًا لاحقًا.';
@@ -2690,7 +2703,7 @@ function requestLabPageReviewStatus() {
 }
 
 function renderLabReviewStatus(result) {
-    const status = document.getElementById('googleSignInStatus');
+    const status = getPageChangesSaveStatus();
     if (!status) {
         if (result && result.status === 'confirmed' &&
             result.created === true && result.url) {
@@ -2781,7 +2794,7 @@ window.addEventListener('message', function(event) {
     clearTimeout(pageChangesTimeout);
     pendingPageChangesNonce = null;
 
-    const status = document.getElementById('googleSignInStatus');
+    const status = getPageChangesSaveStatus();
     const result = data.result || {};
 
     if (
