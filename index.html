@@ -1833,11 +1833,7 @@ window.addEventListener('DOMContentLoaded', () => {
         }
 
         function changeNews() {
-            if (typeof window.finishInitialPageChangesLoad === "function") {
-        window.finishInitialPageChangesLoad();
-    }
-
-    const messages = document.querySelectorAll('#tickerText .ticker-message');
+            const messages = document.querySelectorAll('#tickerText .ticker-message');
             if (!messages.length) return;
             messages[currentNewsIndex].classList.remove('active');
             currentNewsIndex = (currentNewsIndex + 1) % messages.length;
@@ -2936,6 +2932,10 @@ function receivePageChanges(data) {
         }));
     } catch (error) {
         console.warn("تعذر حفظ نسخة محلية من تعديلات النصوص.", error);
+    }
+
+    if (typeof window.finishInitialPageChangesLoad === "function") {
+        window.finishInitialPageChangesLoad();
     }
 
     const messages = document.querySelectorAll('#tickerText .ticker-message');
