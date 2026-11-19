@@ -2430,6 +2430,23 @@ window.addEventListener('DOMContentLoaded', () => {
 
         let pendingPageChangesNonce = null;
 let pageChangesTimeout = null;
+let pendingPageChangesSnapshot = null;
+
+// يحتفظ بالنصوص التي عدّلها المسؤول محليًا حتى يثبت حفظها في GitHub.
+// يمنع التحديث الدوري من استبدال تعديل غير محفوظ بنسخة الخادم الأقدم.
+const unsavedPageTextChanges = new Map();
+
+document.addEventListener('input', function(event) {
+    const target = event.target;
+    if (!target || !target.closest) return;
+    const element = target.closest('[data-page-edit-id]');
+    if (!element || !element.isContentEditable) return;
+
+    const id = (element.getAttribute('data-page-edit-id') || '').trim();
+    if (!id) return;
+
+    unsavedPageTextChanges.set(id, element.textContent.trim());
+});
 
 function toggleLiveEditing() {
     assignPageEditIds();
@@ -2478,7 +2495,10 @@ async function saveAllPageChanges() {
         alert('يوجد طلب حفظ جارٍ بالفعل. انتظر تأكيده أولاً.');
         return;
     }
-    assignPageEditIds();
+    if (assignPageEditIds() === false || window.__pageEditIdsReady === false) {
+        alert('تعذر الحفظ: توجد مشكلة في معرّفات النصوص. لم يتم إرسال التعديلات.');
+        return;
+    }
     const editableElements = Array.from(
         document.querySelectorAll('[data-page-edit-id]')
     );
@@ -2516,12 +2536,22 @@ async function saveAllPageChanges() {
         return;
     }
 
-    const changes = editableElements
-        .map(el => ({
-            id: el.getAttribute('data-page-edit-id'),
-            text: el.textContent.trim()
-        }))
-        .filter(item => item.id && item.text.length <= 10000);
+    const changesById = new Map(
+        editableElements
+            .map(el => [
+                (el.getAttribute('data-page-edit-id') || '').trim(),
+                el.textContent.trim()
+            ])
+            .filter(([id, text]) => id && text.length <= 10000)
+    );
+
+    // قيمة خريطة التعديلات المحلية لها الأولوية على DOM إذا سبق أن وصل
+    // رد دوري قديم أو تغيّر النص أثناء انتظار الحفظ.
+    unsavedPageTextChanges.forEach((text, id) => {
+        if (changesById.has(id)) changesById.set(id, text);
+    });
+
+    const changes = Array.from(changesById, ([id, text]) => ({ id, text }));
 
     if (!changes.length) {
         alert('لا توجد نصوص قابلة للحفظ.');
@@ -2534,6 +2564,7 @@ async function saveAllPageChanges() {
     }
     const nonce = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(36).slice(2);
     pendingPageChangesNonce = nonce;
+    pendingPageChangesSnapshot = new Map(changes.map(item => [item.id, item.text]));
     let frame = document.getElementById('pageChangesUploadFrame');
     if (!frame) {
         frame = document.createElement('iframe');
@@ -2557,7 +2588,8 @@ async function saveAllPageChanges() {
     pageChangesTimeout=setTimeout(() => {
         if(pendingPageChangesNonce===nonce) {
             pendingPageChangesNonce=null;
-            if(status) status.textContent='لم يصل تأكيد الحفظ. تحقق من الصفحة قبل إعادة المحاولة.';
+            pendingPageChangesSnapshot=null;
+            if(status) status.textContent='لم يصل تأكيد الحفظ. احتُفظ بالتعديلات محليًا؛ تحقق من المستودع قبل إعادة المحاولة.';
             alert('لم يصل تأكيد من الخادم؛ لم يتم تأكيد حفظ التعديلات.');
         }
     },60000);
@@ -2590,6 +2622,15 @@ window.addEventListener('message', function(event) {
         result.githubSaved === true &&
         result.githubVerified === true
     ) {
+        // امسح فقط القيم التي تأكد حفظها ولم تتغير أثناء انتظار الرد.
+        if (pendingPageChangesSnapshot) {
+            pendingPageChangesSnapshot.forEach((submittedText, id) => {
+                if (unsavedPageTextChanges.get(id) === submittedText) {
+                    unsavedPageTextChanges.delete(id);
+                }
+            });
+        }
+        pendingPageChangesSnapshot = null;
         cacheCurrentPageChanges();
         const saveSuccessMessage = 'تم الحفظ والتحقق بنجاح في مستودع المختبر.';
         let reviewMessage = '';
@@ -2619,6 +2660,7 @@ window.addEventListener('message', function(event) {
         return;
     }
 
+    pendingPageChangesSnapshot = null;
     const message =
         result.message ||
         result.error ||
@@ -2805,6 +2847,13 @@ function applyPageChangesList(changes) {
 
         stats.matched++;
 
+        // التعديل المحلي غير المحفوظ محمي حتى بعد إغلاق وضع التعديل.
+        // لا نسمح لرد polling قديم باستبداله قبل تأكيد GitHub.
+        if (unsavedPageTextChanges.has(item.id)) {
+            stats.skippedEditing++;
+            return;
+        }
+
         // لا تطبّق ردود الخادم فوق نص يحرره المسؤول حاليًا.
         if (isLiveEditing && element.isContentEditable) {
             stats.skippedEditing++;
@@ -2853,13 +2902,20 @@ function applyPageChangesList(changes) {
 function cacheCurrentPageChanges() {
     try {
 
-        const changes = Array.from(document.querySelectorAll("[data-page-edit-id]"))
-            .map(element => ({
-                id: element.getAttribute("data-page-edit-id"),
-                text: element.textContent.trim()
-            }))
-            .filter(item => item.id && item.text.length <= 10000);
+        const changesById = new Map(
+            Array.from(document.querySelectorAll("[data-page-edit-id]"))
+                .map(element => [
+                    (element.getAttribute("data-page-edit-id") || "").trim(),
+                    element.textContent.trim()
+                ])
+                .filter(([id, text]) => id && text.length <= 10000)
+        );
 
+        unsavedPageTextChanges.forEach((text, id) => {
+            if (changesById.has(id)) changesById.set(id, text);
+        });
+
+        const changes = Array.from(changesById, ([id, text]) => ({ id, text }));
         const payload = JSON.stringify({ changes: changes });
         if (payload.length <= 90000) {
             localStorage.setItem(PAGE_CHANGES_CACHE_KEY, payload);
