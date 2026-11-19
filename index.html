@@ -2520,10 +2520,17 @@ window.addEventListener('message', function(event) {
     ) {
         cacheCurrentPageChanges();
 
-        if (status) status.textContent = 'تم حفظ التعديلات والتحقق منها بنجاح. ستظهر للزوار تلقائيًا دون الحاجة إلى تحديث الصفحة.';
+        const workflowStarted = result.workflowTriggered === true;
+        if (status) {
+            status.textContent = workflowStarted
+                ? 'تم حفظ التعديلات والتحقق منها، وبدأ تشغيل النشر التلقائي للمختبر.'
+                : 'تم حفظ التعديلات والتحقق منها. سيجري نشرها تلقائيًا في دورة التحقق المجدولة.';
+        }
         if (isLiveEditing) toggleLiveEditing();
 
-        alert('تم حفظ التعديل بنجاح في مستودع المختبر، وسيظهر للزوار تلقائيًا خلال ثوانٍ دون إعادة تحميل الصفحة.');
+        alert(workflowStarted
+            ? 'تم حفظ التعديل والتحقق منه، وبدأ النشر التلقائي. ستظهر النسخة الجديدة بعد اكتمال النشر.'
+            : 'تم حفظ التعديل والتحقق منه. سيعالجه النشر التلقائي المجدول دون الحاجة إلى Run workflow.');
         return;
     }
 
