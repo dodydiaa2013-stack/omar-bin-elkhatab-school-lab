@@ -2631,76 +2631,139 @@ function triggerLabPageTextSyncWorkflow_(settings) {
  * ينتظر نتيجة Workflow الفعلية ويتحقق من وجود PR يحتوي آخر نسخة محفوظة.
  * قبول repository_dispatch وحده لا يعني أن طلب المراجعة أُنشئ.
  */
+/**
+ * يتحقق من طلب المراجعة مباشرةً ويطابق ملف النصوص مع آخر نسخة محفوظة.
+ * لا يعتمد على ظهور تشغيل repository_dispatch في قائمة Workflow Runs؛
+ * لأن ظهور التشغيل قد يتأخر أو تختلف بياناته رغم إنشاء PR بنجاح.
+ */
 function waitForLabPageReviewPR_(settings, expectedPayload, dispatchStartedAt) {
-  const workflowRunsUrl = "https://api.github.com/repos/" + settings.repository +
-    "/actions/workflows/sync-lab-page-texts.yml/runs?event=repository_dispatch&per_page=10";
-  const pullsUrl = "https://api.github.com/repos/" + settings.repository +
-    "/pulls?state=open&head=dodydiaa2013-stack:automation/lab-page-text-sync&base=main";
+  const apiRoot = "https://api.github.com/repos/" + settings.repository;
+  const pullsUrl = apiRoot +
+    "/pulls?state=open&head=" +
+    encodeURIComponent("dodydiaa2013-stack:automation/lab-page-text-sync") +
+    "&base=main&per_page=20";
   const reviewBranch = "automation/lab-page-text-sync";
-  const startedMs = new Date(dispatchStartedAt).getTime();
-  let lastRun = null;
+  const fileUrl = apiRoot + "/contents/" + settings.path +
+    "?ref=" + encodeURIComponent(reviewBranch);
 
-  for (let attempt = 0; attempt < 12; attempt++) {
-    const runsResponse = UrlFetchApp.fetch(workflowRunsUrl, {
-      method: "get", headers: settings.headers, muteHttpExceptions: true
-    });
-    if (runsResponse.getResponseCode() !== 200) {
-      return { status: "unverified", created: false,
-        message: "تم إطلاق Workflow، لكن تعذرت قراءة حالة تشغيله من GitHub." };
-    }
-    const runsData = JSON.parse(runsResponse.getContentText() || "{}");
-    const matchingRuns = (runsData.workflow_runs || []).filter(function(run) {
-      return run.event === "repository_dispatch" &&
-        run.path === ".github/workflows/sync-lab-page-texts.yml" &&
-        new Date(run.created_at).getTime() >= startedMs - 5000;
-    });
-    matchingRuns.sort(function(a, b) {
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
-    lastRun = matchingRuns[0] || lastRun;
+  let lastRunUrl = "";
+  let lastProblem = "";
 
-    if (lastRun && lastRun.status === "completed") {
-      if (lastRun.conclusion !== "success") {
-        return { status: "failed", created: false,
-          runUrl: lastRun.html_url || "",
-          message: "انتهى Workflow دون نجاح (" + (lastRun.conclusion || "unknown") + ")." };
-      }
-      const pullsResponse = UrlFetchApp.fetch(pullsUrl, {
-        method: "get", headers: settings.headers, muteHttpExceptions: true
-      });
-      if (pullsResponse.getResponseCode() === 200) {
-        const pulls = JSON.parse(pullsResponse.getContentText() || "[]");
-        const reviewPR = pulls.find(function(pr) {
-          return pr && pr.state === "open" && pr.head &&
-            pr.head.ref === reviewBranch && pr.base && pr.base.ref === "main";
+  // 20 محاولة × ثانيتين = 40 ثانية كحد أقصى.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      // تشغيل Workflow اختياري للتشخيص فقط، وليس شرطًا لتأكيد PR.
+      if (!lastRunUrl) {
+        const workflowRunsUrl = apiRoot +
+          "/actions/workflows/sync-lab-page-texts.yml/runs?event=repository_dispatch&per_page=10";
+        const runsResponse = UrlFetchApp.fetch(workflowRunsUrl, {
+          method: "get",
+          headers: settings.headers,
+          muteHttpExceptions: true
         });
-        if (reviewPR) {
-          const fileUrl = "https://api.github.com/repos/" + settings.repository +
-            "/contents/" + settings.path + "?ref=" + encodeURIComponent(reviewBranch);
-          const fileResponse = UrlFetchApp.fetch(fileUrl, {
-            method: "get", headers: settings.headers, muteHttpExceptions: true
+
+        if (runsResponse.getResponseCode() === 200) {
+          const runsData = JSON.parse(runsResponse.getContentText() || "{}");
+          const startedMs = new Date(dispatchStartedAt).getTime();
+          const matchingRuns = (runsData.workflow_runs || []).filter(function(run) {
+            const createdMs = new Date(run.created_at).getTime();
+            return run &&
+              run.event === "repository_dispatch" &&
+              String(run.path || "").indexOf("sync-lab-page-texts.yml") !== -1 &&
+              (!isFinite(startedMs) || createdMs >= startedMs - 60000);
           });
-          if (fileResponse.getResponseCode() === 200) {
-            const file = JSON.parse(fileResponse.getContentText() || "{}");
-            if (file.encoding === "base64" && file.content) {
-              const raw = Utilities.newBlob(Utilities.base64Decode(file.content.replace(/\s/g, "")))
-                .getDataAsString("UTF-8");
-              const prPayload = validateLabPageChangesPayload_(JSON.parse(raw));
-              if (getPageChangesSyncHash_(prPayload) === getPageChangesSyncHash_(expectedPayload)) {
-                return { status: "confirmed", created: true,
-                  number: reviewPR.number, url: reviewPR.html_url || "",
-                  runUrl: lastRun.html_url || "" };
-              }
-            }
+
+          matchingRuns.sort(function(a, b) {
+            return new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime();
+          });
+
+          if (matchingRuns.length && matchingRuns[0].html_url) {
+            lastRunUrl = matchingRuns[0].html_url;
           }
         }
       }
+
+      // افحص PR في كل محاولة، حتى لو لم يظهر Workflow Run أو لم يكتمل.
+      const pullsResponse = UrlFetchApp.fetch(pullsUrl, {
+        method: "get",
+        headers: settings.headers,
+        muteHttpExceptions: true
+      });
+
+      if (pullsResponse.getResponseCode() !== 200) {
+        lastProblem = "تعذرت قراءة طلبات المراجعة من GitHub (HTTP " +
+          pullsResponse.getResponseCode() + ").";
+      } else {
+        const pulls = JSON.parse(pullsResponse.getContentText() || "[]");
+        const reviewPR = (Array.isArray(pulls) ? pulls : []).find(function(pr) {
+          return pr &&
+            pr.state === "open" &&
+            pr.head &&
+            pr.head.ref === reviewBranch &&
+            pr.base &&
+            pr.base.ref === "main";
+        });
+
+        if (reviewPR && reviewPR.html_url) {
+          const fileResponse = UrlFetchApp.fetch(fileUrl, {
+            method: "get",
+            headers: settings.headers,
+            muteHttpExceptions: true
+          });
+
+          if (fileResponse.getResponseCode() === 200) {
+            const file = JSON.parse(fileResponse.getContentText() || "{}");
+
+            if (file.encoding === "base64" && file.content) {
+              const cleanBase64 = String(file.content).replace(/\\s/g, "");
+              const raw = Utilities.newBlob(
+                Utilities.base64Decode(cleanBase64)
+              ).getDataAsString("UTF-8");
+
+              const prPayload = validateLabPageChangesPayload_(JSON.parse(raw));
+              const actualHash = getPageChangesSyncHash_(prPayload);
+              const expectedHash = getPageChangesSyncHash_(expectedPayload);
+
+              if (actualHash === expectedHash) {
+                return {
+                  status: "confirmed",
+                  created: true,
+                  number: reviewPR.number,
+                  url: reviewPR.html_url,
+                  runUrl: lastRunUrl
+                };
+              }
+
+              lastProblem = "طلب المراجعة موجود، لكن ملفه لم يتضمن أحدث النصوص بعد.";
+            } else {
+              lastProblem = "طلب المراجعة موجود، لكن ملف النصوص لم يُقرأ بصيغة متوقعة.";
+            }
+          } else {
+            lastProblem = "طلب المراجعة موجود، لكن تعذرت قراءة ملفه (HTTP " +
+              fileResponse.getResponseCode() + ").";
+          }
+        } else {
+          lastProblem = "لم يظهر طلب المراجعة بعد.";
+        }
+      }
+    } catch (error) {
+      lastProblem = error && error.message
+        ? error.message
+        : String(error);
+      console.error("تعذر التحقق من طلب مراجعة المختبر: " + lastProblem);
     }
-    if (attempt < 11) Utilities.sleep(1500);
+
+    if (attempt < 19) Utilities.sleep(2000);
   }
-  return { status: "pending", created: false,
-    runUrl: lastRun && lastRun.html_url ? lastRun.html_url : "",
-    message: "تم إطلاق Workflow، لكن لم يكتمل بعد تأكيد طلب المراجعة واحتوائه على أحدث النصوص." };
+
+  return {
+    status: "pending",
+    created: false,
+    runUrl: lastRunUrl,
+    message: "تم إطلاق Workflow، لكن لم يمكن تأكيد طلب المراجعة ومطابقة أحدث النصوص بعد. " +
+      (lastProblem ? lastProblem : "")
+  };
 }
 
 function savePageChanges(p) {
