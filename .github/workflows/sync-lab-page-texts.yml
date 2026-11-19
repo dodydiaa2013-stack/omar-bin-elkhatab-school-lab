@@ -1,7 +1,7 @@
-name: Sync lab page text and publish automatically
+name: Prepare LAB page text review pull request
 # Apps Script writes the GitHub-only page-text JSON to the dedicated input branch.
-# This workflow builds from main, validates the result, then proposes and merges
-# the text-only update. Repository branch protection remains in force.
+# This workflow validates the result and opens a draft review PR only.
+# It never merges or publishes automatically.
 on:
   # مسار مباشر: Apps Script يرسل repository_dispatch بعد نجاح الحفظ والتحقق.
   repository_dispatch:
@@ -82,21 +82,18 @@ jobs:
           pr_number=$(gh pr list --repo "$GITHUB_REPOSITORY" --head automation/lab-page-text-sync --base main --state open --json number --jq '.[0].number // empty')
 
           if [ -z "$pr_number" ]; then
-            gh pr create \
+            gh pr create --draft \
               --repo "$GITHUB_REPOSITORY" \
               --base main \
               --head automation/lab-page-text-sync \
-              --title "Publish saved LAB school page text" \
-              --body "## Automatic page-text publication
+              --title "Review saved LAB school page text" \
+              --body "## LAB page-text review
 
           - Generated from the latest LAB GitHub-only page text payload.
           - Updates only page-changes-lab.json and matching text in index.html.
-          - The workflow validates the generated update before proposing it.
-          - GitHub branch protection is not bypassed; if a required approval or check blocks merging, the PR remains open and the workflow reports the failure."
-            pr_number=$(gh pr list --repo "$GITHUB_REPOSITORY" --head automation/lab-page-text-sync --base main --state open --json number --jq '.[0].number')
+          - The workflow validates the HTML structure, all saved IDs, and duplicate IDs before creating this PR.
+          - This PR is intentionally draft. No automatic merge or publication is performed.
+          - Review and approve it manually only after the LAB preview has been checked."
           fi
 
-          # Convert any existing draft PR to ready, then merge only if GitHub
-          # confirms all repository protection requirements are satisfied.
-          gh pr ready "$pr_number"
-          gh pr merge "$pr_number" --squash --delete-branch
+          echo "Draft review PR is ready for human inspection. No merge was attempted."
