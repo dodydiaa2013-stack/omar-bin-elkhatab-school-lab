@@ -1508,13 +1508,51 @@
             } catch (error) { return ''; }
         }
 
+        function isAppsScriptFrameSource(source, expectedFrame) {
+            if (!expectedFrame) return true;
+
+            // Google Apps Script may execute its response in a nested
+            // googleusercontent iframe. In that case event.source is the
+            // nested window, not the outer form-target iframe itself.
+            // Accept only the expected iframe or one of its descendants.
+            const pending = [expectedFrame];
+            const visited = new Set();
+
+            while (pending.length && visited.size < 64) {
+                const current = pending.pop();
+                if (!current || visited.has(current)) continue;
+                visited.add(current);
+
+                if (source === current) return true;
+
+                let frameCount = 0;
+                try {
+                    frameCount = current.length;
+                } catch (error) {
+                    continue;
+                }
+
+                for (let index = 0; index < frameCount; index++) {
+                    try {
+                        const child = current.frames[index];
+                        if (child && !visited.has(child)) pending.push(child);
+                    } catch (error) {
+                        // An inaccessible child is not trusted.
+                    }
+                }
+            }
+
+            return false;
+        }
+
         function isTrustedAppsScriptMessage(event, expectedSource) {
-            // postMessage responses must come from a different browsing context.
+            // Bind the response to the submitted iframe, including Google's
+            // nested sandbox frame, while still rejecting unrelated windows.
             if (
                 !event ||
                 !event.source ||
                 event.source === window ||
-                (expectedSource && event.source !== expectedSource)
+                !isAppsScriptFrameSource(event.source, expectedSource)
             ) {
                 return false;
             }
