@@ -2643,47 +2643,15 @@ function waitForLabPageReviewPR_(settings, expectedPayload, dispatchStartedAt) {
   const fileUrl = apiRoot + "/contents/" + settings.path +
     "?ref=" + encodeURIComponent(reviewBranch);
 
-  let lastRunUrl = "";
-  let workflowRunChecked = false;
   let lastProblem = "";
 
-  // 20 محاولة × ثانيتين = 40 ثانية كحد أقصى.
-  for (let attempt = 0; attempt < 20; attempt++) {
+  // تحقق سريع ومتدرج: 10 محاولات، بفواصل متزايدة، بدل انتظار ثابت يصل إلى 40 ثانية.
+  // لا نستعلم عن Workflow Runs؛ ظهورها ليس شرطًا لتأكيد PR ويضيف طلب API غير ضروري.
+  const retryDelays = [400, 600, 800, 1000, 1250, 1500, 1750, 2000, 2000, 2000];
+
+  for (let attempt = 0; attempt < retryDelays.length; attempt++) {
     try {
-      // تشغيل Workflow اختياري للتشخيص فقط، وليس شرطًا لتأكيد PR.
-      if (!workflowRunChecked) {
-        workflowRunChecked = true;
-        const workflowRunsUrl = apiRoot +
-          "/actions/workflows/sync-lab-page-texts.yml/runs?event=repository_dispatch&per_page=10";
-        const runsResponse = UrlFetchApp.fetch(workflowRunsUrl, {
-          method: "get",
-          headers: settings.headers,
-          muteHttpExceptions: true
-        });
-
-        if (runsResponse.getResponseCode() === 200) {
-          const runsData = JSON.parse(runsResponse.getContentText() || "{}");
-          const startedMs = new Date(dispatchStartedAt).getTime();
-          const matchingRuns = (runsData.workflow_runs || []).filter(function(run) {
-            const createdMs = new Date(run.created_at).getTime();
-            return run &&
-              run.event === "repository_dispatch" &&
-              String(run.path || "").indexOf("sync-lab-page-texts.yml") !== -1 &&
-              (!isFinite(startedMs) || createdMs >= startedMs - 60000);
-          });
-
-          matchingRuns.sort(function(a, b) {
-            return new Date(b.created_at).getTime() -
-              new Date(a.created_at).getTime();
-          });
-
-          if (matchingRuns.length && matchingRuns[0].html_url) {
-            lastRunUrl = matchingRuns[0].html_url;
-          }
-        }
-      }
-
-      // افحص PR في كل محاولة، حتى لو لم يظهر Workflow Run أو لم يكتمل.
+      // نبدأ دائمًا بفحص PR مباشرةً. لا نقرأ ملف الفرع إلا بعد العثور على PR مفتوح.
       const pullsResponse = UrlFetchApp.fetch(pullsUrl, {
         method: "get",
         headers: settings.headers,
@@ -2730,7 +2698,7 @@ function waitForLabPageReviewPR_(settings, expectedPayload, dispatchStartedAt) {
                   created: true,
                   number: reviewPR.number,
                   url: reviewPR.html_url,
-                  runUrl: lastRunUrl
+                  runUrl: ""
                 };
               }
 
@@ -2753,14 +2721,17 @@ function waitForLabPageReviewPR_(settings, expectedPayload, dispatchStartedAt) {
       console.error("تعذر التحقق من طلب مراجعة المختبر: " + lastProblem);
     }
 
-    if (attempt < 19) Utilities.sleep(2000);
+    if (attempt < retryDelays.length - 1) {
+      Utilities.sleep(retryDelays[attempt]);
+    }
   }
 
   return {
     status: "pending",
     created: false,
-    runUrl: lastRunUrl,
-    message: "تم إطلاق Workflow، لكن لم يمكن تأكيد طلب المراجعة ومطابقة أحدث النصوص بعد. " +
+    runUrl: "",
+    message: "تم حفظ النصوص والتحقق منها، لكن تأكيد طلب المراجعة لم يكتمل خلال مهلة التحقق السريع. " +
+      "يمكن مراجعة الطلب لاحقًا دون إعادة حفظ النصوص. " +
       (lastProblem ? lastProblem : "")
   };
 }
