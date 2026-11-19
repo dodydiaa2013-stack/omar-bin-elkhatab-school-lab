@@ -2716,7 +2716,7 @@ function waitForLabPageReviewPR_(settings, expectedPayload, dispatchStartedAt) {
             const file = JSON.parse(fileResponse.getContentText() || "{}");
 
             if (file.encoding === "base64" && file.content) {
-              const cleanBase64 = String(file.content).replace(/\\s/g, "");
+              const cleanBase64 = String(file.content).replace(/\s/g, "");
               const raw = Utilities.newBlob(
                 Utilities.base64Decode(cleanBase64)
               ).getDataAsString("UTF-8");
