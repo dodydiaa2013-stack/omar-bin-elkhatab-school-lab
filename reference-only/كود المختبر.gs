@@ -2701,6 +2701,7 @@ function savePageChanges(p) {
     "server-tip-3", "server-tip-4", "tablet-support-tip-1",
     "tablet-support-tip-2", "tablet-support-tip-3",
     "tablet-support-tip-4", "ticker-message-1",
+    "footer-copyright",
     "ticker-message-2", "ticker-message-3", "ticker-message-4"
   ];
 
