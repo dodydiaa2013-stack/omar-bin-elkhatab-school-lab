@@ -2518,7 +2518,7 @@ function readLabPageChangesFromGitHub_() {
   }
 
   const raw = Utilities.newBlob(
-    Utilities.base64Decode(file.content.replace(/\\s/g, ""))
+    Utilities.base64Decode(file.content.replace(/\s/g, ""))
   ).getDataAsString("UTF-8");
 
   const payload = validateLabPageChangesPayload_(JSON.parse(raw));
@@ -2683,7 +2683,7 @@ function waitForLabPageReviewPR_(settings, expectedPayload, dispatchStartedAt) {
           if (fileResponse.getResponseCode() === 200) {
             const file = JSON.parse(fileResponse.getContentText() || "{}");
             if (file.encoding === "base64" && file.content) {
-              const raw = Utilities.newBlob(Utilities.base64Decode(file.content.replace(/\\s/g, "")))
+              const raw = Utilities.newBlob(Utilities.base64Decode(file.content.replace(/\s/g, "")))
                 .getDataAsString("UTF-8");
               const prPayload = validateLabPageChangesPayload_(JSON.parse(raw));
               if (getPageChangesSyncHash_(prPayload) === getPageChangesSyncHash_(expectedPayload)) {
