@@ -307,6 +307,47 @@ function pageChangesPostMessage(p, result) {
     .createHtmlOutput(html)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
+function labPageReviewStatusPostMessage(p, result) {
+  p = p || {};
+  const requestedOrigin = String(p.origin || "");
+  const allowedOrigin = ALLOWED_PAGE_ORIGINS.includes(requestedOrigin)
+    ? requestedOrigin
+    : "";
+
+  if (!allowedOrigin) {
+    return jsonOutput({
+      success: false,
+      status: "error",
+      message: "مصدر الطلب غير مسموح"
+    });
+  }
+
+  const payload = JSON.stringify({
+    type: "labPageReviewStatusResult",
+    nonce: String(p.nonce || ""),
+    result: Object.assign({ environment: "LAB" }, result || {})
+  }).replace(/</g, "\\u003c");
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head><meta charset="UTF-8"></head>
+      <body>
+        <script>
+          window.top.postMessage(
+            ${payload},
+            ${JSON.stringify(allowedOrigin)}
+          );
+        </script>
+      </body>
+    </html>
+  `;
+
+  return HtmlService
+    .createHtmlOutput(html)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
 function photoAlbumPostMessage(p, result) {
   p = p || {};
 
@@ -1435,6 +1476,10 @@ function doPost(e) {
       return savePageChanges(p);
     }
 
+    if (action === "checkLabPageReviewStatus") {
+      return checkLabPageReviewStatus(p);
+    }
+
     if (action === "uploadGalleryImage") {
       return uploadGalleryImage(p);
     }
@@ -1520,6 +1565,14 @@ function doPost(e) {
     if (action === "savePageChanges") {
       return pageChangesPostMessage(p, {
         success: false,
+        message: message
+      });
+    }
+
+    if (action === "checkLabPageReviewStatus") {
+      return labPageReviewStatusPostMessage(p, {
+        success: false,
+        status: "error",
         message: message
       });
     }
@@ -2628,112 +2681,129 @@ function triggerLabPageTextSyncWorkflow_(settings) {
 
 
 /**
- * يتحقق من طلب المراجعة مباشرةً ويطابق ملف النصوص مع آخر نسخة محفوظة.
- * لا يعتمد على ظهور تشغيل repository_dispatch في قائمة Workflow Runs؛
- * لأن ظهور التشغيل قد يتأخر أو تختلف بياناته رغم إنشاء PR بنجاح.
+ * فحص مستقل لحالة طلب المراجعة بعد انتهاء الحفظ.
+ * لا ينتظر Workflow داخل طلب الحفظ، ولا يؤكد PR إلا بعد مطابقة بصمة ملفه.
  */
-function waitForLabPageReviewPR_(settings, expectedPayload, dispatchStartedAt) {
-  const apiRoot = "https://api.github.com/repos/" + settings.repository;
-  const repositoryOwner = settings.repository.split("/")[0];
-  const pullsUrl = apiRoot +
-    "/pulls?state=open&head=" +
-    encodeURIComponent(repositoryOwner + ":automation/lab-page-text-sync") +
-    "&base=main&per_page=20";
-  const reviewBranch = "automation/lab-page-text-sync";
-  const fileUrl = apiRoot + "/contents/" + settings.path +
-    "?ref=" + encodeURIComponent(reviewBranch);
+function checkLabPageReviewStatus(p) {
+  p = p || {};
 
-  let lastProblem = "";
+  try {
+    if (String(p.environment || "") !== "LAB") {
+      throw new Error("تم رفض الطلب لأن البيئة المحددة ليست المختبر.");
+    }
 
-  // تحقق سريع ومتدرج: 10 محاولات، بفواصل متزايدة، بدل انتظار ثابت يصل إلى 40 ثانية.
-  // لا نستعلم عن Workflow Runs؛ ظهورها ليس شرطًا لتأكيد PR ويضيف طلب API غير ضروري.
-  const retryDelays = [400, 600, 800, 1000, 1250, 1500, 1750, 2000, 2000, 2000];
+    verifyAdminToken(p.googleUploadToken || p.token || "");
+    verifyAdminSession(p.adminSessionToken || "");
 
-  for (let attempt = 0; attempt < retryDelays.length; attempt++) {
-    try {
-      // نبدأ دائمًا بفحص PR مباشرةً. لا نقرأ ملف الفرع إلا بعد العثور على PR مفتوح.
-      const pullsResponse = UrlFetchApp.fetch(pullsUrl, {
-        method: "get",
-        headers: settings.headers,
-        muteHttpExceptions: true
+    const expectedHash = String(p.expectedHash || "").trim();
+    if (!/^[A-Za-z0-9_-]{43}$/.test(expectedHash)) {
+      throw new Error("بصمة النصوص المطلوبة للتحقق غير صالحة.");
+    }
+
+    const settings = getLabPageChangesGitHubSettings_();
+    const apiRoot = "https://api.github.com/repos/" + settings.repository;
+    const owner = settings.repository.split("/")[0];
+    const reviewBranch = "automation/lab-page-text-sync";
+    const pullsUrl = apiRoot +
+      "/pulls?state=open&head=" +
+      encodeURIComponent(owner + ":" + reviewBranch) +
+      "&base=main&per_page=20";
+
+    const pullsResponse = UrlFetchApp.fetch(pullsUrl, {
+      method: "get",
+      headers: {
+        Authorization: "Bearer " + settings.token,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      },
+      muteHttpExceptions: true
+    });
+
+    const pullsStatus = pullsResponse.getResponseCode();
+    if (pullsStatus !== 200) {
+      throw new Error("تعذرت قراءة طلب المراجعة من GitHub (HTTP " + pullsStatus + ").");
+    }
+
+    const pulls = JSON.parse(pullsResponse.getContentText() || "[]");
+    const reviewPR = (Array.isArray(pulls) ? pulls : []).find(function(pr) {
+      return pr &&
+        pr.state === "open" &&
+        pr.head &&
+        pr.head.ref === reviewBranch &&
+        pr.base &&
+        pr.base.ref === "main" &&
+        pr.html_url;
+    });
+
+    if (!reviewPR) {
+      return labPageReviewStatusPostMessage(p, {
+        success: true,
+        status: "pending",
+        created: false,
+        message: "لم يظهر طلب المراجعة بعد."
       });
-
-      if (pullsResponse.getResponseCode() !== 200) {
-        lastProblem = "تعذرت قراءة طلبات المراجعة من GitHub (HTTP " +
-          pullsResponse.getResponseCode() + ").";
-      } else {
-        const pulls = JSON.parse(pullsResponse.getContentText() || "[]");
-        const reviewPR = (Array.isArray(pulls) ? pulls : []).find(function(pr) {
-          return pr &&
-            pr.state === "open" &&
-            pr.head &&
-            pr.head.ref === reviewBranch &&
-            pr.base &&
-            pr.base.ref === "main";
-        });
-
-        if (reviewPR && reviewPR.html_url) {
-          const fileResponse = UrlFetchApp.fetch(fileUrl, {
-            method: "get",
-            headers: settings.headers,
-            muteHttpExceptions: true
-          });
-
-          if (fileResponse.getResponseCode() === 200) {
-            const file = JSON.parse(fileResponse.getContentText() || "{}");
-
-            if (file.encoding === "base64" && file.content) {
-              const cleanBase64 = String(file.content).replace(/\s/g, "");
-              const raw = Utilities.newBlob(
-                Utilities.base64Decode(cleanBase64)
-              ).getDataAsString("UTF-8");
-
-              const prPayload = validateLabPageChangesPayload_(JSON.parse(raw));
-              const actualHash = getPageChangesSyncHash_(prPayload);
-              const expectedHash = getPageChangesSyncHash_(expectedPayload);
-
-              if (actualHash === expectedHash) {
-                return {
-                  status: "confirmed",
-                  created: true,
-                  number: reviewPR.number,
-                  url: reviewPR.html_url,
-                  runUrl: ""
-                };
-              }
-
-              lastProblem = "طلب المراجعة موجود، لكن ملفه لم يتضمن أحدث النصوص بعد.";
-            } else {
-              lastProblem = "طلب المراجعة موجود، لكن ملف النصوص لم يُقرأ بصيغة متوقعة.";
-            }
-          } else {
-            lastProblem = "طلب المراجعة موجود، لكن تعذرت قراءة ملفه (HTTP " +
-              fileResponse.getResponseCode() + ").";
-          }
-        } else {
-          lastProblem = "لم يظهر طلب المراجعة بعد.";
-        }
-      }
-    } catch (error) {
-      lastProblem = error && error.message
-        ? error.message
-        : String(error);
-      console.error("تعذر التحقق من طلب مراجعة المختبر: " + lastProblem);
     }
 
-    if (attempt < retryDelays.length - 1) {
-      Utilities.sleep(retryDelays[attempt]);
+    const fileUrl = apiRoot + "/contents/" + settings.path +
+      "?ref=" + encodeURIComponent(reviewBranch);
+    const fileResponse = UrlFetchApp.fetch(fileUrl, {
+      method: "get",
+      headers: {
+        Authorization: "Bearer " + settings.token,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      },
+      muteHttpExceptions: true
+    });
+
+    if (fileResponse.getResponseCode() !== 200) {
+      return labPageReviewStatusPostMessage(p, {
+        success: true,
+        status: "pending",
+        created: false,
+        message: "طلب المراجعة موجود، لكن ملف النصوص لم يصبح متاحًا للتحقق بعد."
+      });
     }
+
+    const file = JSON.parse(fileResponse.getContentText() || "{}");
+    if (file.encoding !== "base64" || !file.content) {
+      throw new Error("استجابة ملف النصوص داخل طلب المراجعة غير مكتملة.");
+    }
+
+    const raw = Utilities.newBlob(
+      Utilities.base64Decode(String(file.content).replace(/\\s/g, ""))
+    ).getDataAsString("UTF-8");
+    const actualPayload = validateLabPageChangesPayload_(JSON.parse(raw));
+    const actualHash = getPageChangesSyncHash_(actualPayload);
+
+    if (actualHash !== expectedHash) {
+      return labPageReviewStatusPostMessage(p, {
+        success: true,
+        status: "pending",
+        created: false,
+        number: reviewPR.number,
+        url: reviewPR.html_url,
+        message: "طلب المراجعة موجود، لكنه لم يتضمن أحدث نسخة محفوظة من النصوص بعد."
+      });
+    }
+
+    return labPageReviewStatusPostMessage(p, {
+      success: true,
+      status: "confirmed",
+      created: true,
+      number: reviewPR.number,
+      url: reviewPR.html_url,
+      message: "تم التأكد من وجود طلب المراجعة ومطابقة محتواه مع آخر نصوص محفوظة."
+    });
+
+  } catch (error) {
+    return labPageReviewStatusPostMessage(p, {
+      success: false,
+      status: "error",
+      created: false,
+      message: error.message || "تعذر التحقق من حالة طلب المراجعة."
+    });
   }
-
-  return {
-    status: "pending",
-    created: false,
-    runUrl: "",
-    message: "تم حفظ النصوص والتحقق منها، لكن تأكيد طلب المراجعة لم يكتمل خلال مهلة التحقق السريع. " +
-      "يمكن مراجعة الطلب لاحقًا دون إعادة حفظ النصوص. " +
-      (lastProblem ? lastProblem : "")
-  };
 }
 
 function savePageChanges(p) {
@@ -2940,10 +3010,13 @@ function savePageChanges(p) {
     let workflowTriggerError = "";
     let reviewStatus = { status: "not_started", created: false };
     try {
-      const dispatchStartedAt = new Date().toISOString();
       workflowTriggered = triggerLabPageTextSyncWorkflow_(verified.settings);
       if (workflowTriggered) {
-        reviewStatus = waitForLabPageReviewPR_(verified.settings, payloadToSave, dispatchStartedAt);
+        reviewStatus = {
+          status: "pending",
+          created: false,
+          message: "تم إطلاق Workflow. سيتم التحقق من طلب المراجعة بصورة مستقلة بعد تأكيد الحفظ."
+        };
       }
     } catch (dispatchError) {
       workflowTriggerError = dispatchError.message || String(dispatchError);
@@ -2964,10 +3037,9 @@ function savePageChanges(p) {
       reviewPrUrl: reviewStatus.url || "",
       workflowRunUrl: reviewStatus.runUrl || "",
       workflowStatusMessage: reviewStatus.message || "",
+      reviewExpectedHash: getPageChangesSyncHash_(payloadToSave),
       htmlUpdatePending: true,
-      message: reviewStatus.created
-        ? "تم حفظ النصوص والتحقق منها، وتم التأكد من وجود طلب المراجعة الذي يحتوي أحدث النصوص."
-        : "تم حفظ النصوص والتحقق منها في مستودع المختبر، لكن لم يتم تأكيد إنشاء طلب المراجعة بعد.",
+      message: "تم حفظ النصوص والتحقق منها في مستودع المختبر. يجري التحقق من طلب المراجعة بصورة مستقلة.",
       count: finalChanges.length
     });
 
