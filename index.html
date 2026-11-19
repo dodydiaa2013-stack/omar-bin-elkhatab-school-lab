@@ -2521,16 +2521,19 @@ window.addEventListener('message', function(event) {
         cacheCurrentPageChanges();
 
         const workflowStarted = result.workflowTriggered === true;
+        const saveSuccessMessage = 'تم الحفظ بنجاح ✅ تم تخزين التعديلات والتحقق منها في مستودع المختبر.';
+        const publishMessage = workflowStarted
+            ? 'بدأ النشر التلقائي؛ ستظهر التعديلات على الموقع بعد اكتمال التحديث.'
+            : 'تم تأكيد الحفظ؛ وسيتم نشر التعديلات تلقائيًا في دورة التحقق المجدولة.';
         if (status) {
-            status.textContent = workflowStarted
-                ? 'تم حفظ التعديلات والتحقق منها، وبدأ تشغيل النشر التلقائي للمختبر.'
-                : 'تم حفظ التعديلات والتحقق منها. سيجري نشرها تلقائيًا في دورة التحقق المجدولة.';
+            status.textContent = saveSuccessMessage + ' ' + publishMessage;
+            status.classList.remove('hidden');
+            status.setAttribute('role', 'status');
+            status.setAttribute('aria-live', 'polite');
         }
         if (isLiveEditing) toggleLiveEditing();
 
-        alert(workflowStarted
-            ? 'تم حفظ التعديل والتحقق منه، وبدأ النشر التلقائي. ستظهر النسخة الجديدة بعد اكتمال النشر.'
-            : 'تم حفظ التعديل والتحقق منه. سيعالجه النشر التلقائي المجدول دون الحاجة إلى Run workflow.');
+        alert(saveSuccessMessage + '\n' + publishMessage);
         return;
     }
 
