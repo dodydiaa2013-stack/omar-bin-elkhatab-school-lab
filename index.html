@@ -2668,11 +2668,7 @@ function requestLabPageReviewStatus() {
     if (!reviewExpectedHash || pendingReviewStatusNonce) return;
 
     if (reviewPollAttempts >= 20) {
-        const status = getPageChangesSaveStatus();
-        if (status) {
-            status.textContent =
-                'تم حفظ النصوص والتحقق منها. ما زال تأكيد طلب المراجعة قيد الانتظار؛ لم نعتبره منشأ دون رابط مؤكد. سيُعاد الفحص تلقائيًا لاحقًا.';
-        }
+        // يستمر فحص طلب المراجعة في الخلفية دون تغيير رسالة تأكيد الحفظ في الشريط.
         // قد يعمل مسار الجدولة الاحتياطي بعد عدة دقائق إذا تعذر dispatch.
         // نخفّض معدل الطلبات بعد انتهاء الفحص السريع بدل إيقاف المتابعة نهائيًا.
         reviewPollAttempts = 0;
@@ -2739,45 +2735,16 @@ function requestLabPageReviewStatus() {
 }
 
 function renderLabReviewStatus(result) {
-    const status = getPageChangesSaveStatus();
-    if (!status) {
-        if (result && result.status === 'confirmed' &&
-            result.created === true && result.url) {
-            reviewExpectedHash = '';
-            return;
-        }
-        scheduleLabPageReviewPoll(2500);
-        return;
-    }
-
-    status.replaceChildren(
-        document.createTextNode('تم الحفظ بنجاح. ')
-    );
-
+    // فحص طلب المراجعة مستقل عن رسالة الحفظ؛ لا نكتب تفاصيله في شريط المطور.
     if (result && result.status === 'confirmed' &&
         result.created === true && result.url) {
-        status.appendChild(document.createTextNode(
-            'تم التأكد من طلب المراجعة رقم #' + (result.number || '') + ': '
-        ));
-        const link = document.createElement('a');
-        link.href = result.url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = result.url;
-        link.style.textDecoration = 'underline';
-        status.appendChild(link);
-        status.appendChild(document.createTextNode(
-            ' ولن يتم النشر قبل مراجعته وموافقتك.'
-        ));
         reviewExpectedHash = '';
         if (reviewPollTimer) clearTimeout(reviewPollTimer);
         reviewPollTimer = null;
         return;
     }
 
-    status.appendChild(document.createTextNode(
-        'ما زال تأكيد طلب المراجعة قيد الانتظار. لن نعتبره منشأ قبل التحقق من رابطه ومحتواه.'
-    ));
+    // عند تأخر إنشاء طلب المراجعة نستمر في الفحص بصمت، وتظل رسالة الشريط "تم".
     scheduleLabPageReviewPoll(2500);
 }
 
@@ -2849,10 +2816,9 @@ window.addEventListener('message', function(event) {
         pendingPageChangesSnapshot = null;
         cacheCurrentPageChanges();
 
-        const saveSuccessMessage =
-            'تم الحفظ بنجاح.';
+        const saveSuccessMessage = 'تم الحفظ بنجاح.';
         if (status) {
-            status.textContent = saveSuccessMessage;
+            status.textContent = 'تم';
             status.classList.remove('hidden');
             status.setAttribute('role', 'status');
             status.setAttribute('aria-live', 'polite');
@@ -2868,8 +2834,8 @@ window.addEventListener('message', function(event) {
 
         if (/^[A-Za-z0-9_-]{43}$/.test(reviewExpectedHash)) {
             scheduleLabPageReviewPoll(700);
-        } else if (status) {
-            status.textContent += ' تعذر بدء فحص طلب المراجعة لأن بصمة النصوص غير صالحة.';
+        } else {
+            console.warn('[PageChanges] تعذر بدء فحص طلب المراجعة: بصمة النصوص غير صالحة.');
         }
         return;
     }
