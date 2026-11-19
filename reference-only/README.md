@@ -4,22 +4,24 @@ These files are source templates for the **public GitHub Pages lab only**. They 
 
 ## Lab isolation
 
-The lab Apps Script template uses separate Drive folder names, a separate page-text JSON filename, separate Script Properties, and the lab GitHub repository:
+The lab Apps Script template uses separate Drive folders for images, schedules, and albums. **Page text is the exception: it is stored only in GitHub, not in Google Drive.**
 
-- Drive folders are prefixed with `مختبر -`.
-- Page text file: `page-changes-lab.json`.
+- Image, schedule, and album folders are prefixed with `مختبر -`.
+- Page text JSON: `page-changes-lab.json` in the lab repository.
 - GitHub repository: `dodydiaa2013-stack/omar-bin-elkhatab-school-lab`.
 - GitHub input branch: `automation/lab-page-text-sync-input`.
-- The lab HTML still has its backend URL deliberately disabled until the lab Apps Script Web App is deployed and its URL is inserted into the lab site.
+- The lab HTML backend URL remains deliberately disabled until the separate lab Apps Script Web App is deployed and its URL is inserted into the lab site.
 
-## Two-way page-text synchronization
+## GitHub-only page-text storage
 
-The lab backend template supports guarded two-way synchronization:
+1. The website requests saved text from the lab Apps Script.
+2. Apps Script reads `page-changes-lab.json` directly from the dedicated GitHub input branch.
+3. After administrator password and Google verification, saving writes the new JSON directly to that branch.
+4. Apps Script re-reads the file and verifies its content before confirming success.
+5. The existing workflow validates the JSON and publishes the matching text into the lab `index.html`.
+6. GitHub's file SHA is used for optimistic concurrency. If the file changes between read and write, the save is rejected rather than overwriting the newer change.
 
-1. Website save -> lab Google Drive -> lab GitHub input branch -> lab workflow updates the lab website.
-2. Direct edit to `page-changes-lab.json` on the lab input branch -> next page-text request reads GitHub and imports the change into lab Drive.
-3. A SHA-256 content baseline is stored in Script Properties. If only one side changed, that side is synchronized. If both sides changed independently, the backend does not overwrite either copy and logs a conflict.
-4. The production repository, production input branch, and production JSON filename are not used by this lab template.
+There is no page-text JSON file, folder, file ID, or text synchronization baseline in Google Drive. Drive remains in use for images, schedules, and albums only.
 
 ## Before deploying the lab Apps Script
 
@@ -40,7 +42,7 @@ Configure these Script Properties in the new lab Apps Script project:
 | `GITHUB_LAB_PAGE_SYNC_BRANCH` | `automation/lab-page-text-sync-input` |
 | `ADMIN_AUTH_VERSION` | `1` |
 
-The first lab request creates the lab page-text folder/file. Other image, schedule, and album folders are created/used under the lab-prefixed names. Ensure the lab Google account has its own test data; do not point these functions at production folders or file IDs.
+The page-text JSON file is kept in the GitHub input branch and is not created in Drive. Other image, schedule, and album folders are created/used under the lab-prefixed names. Ensure the lab Google account has its own test data; do not point these functions at production folders or file IDs.
 
 The OAuth client must be configured for the GitHub Pages origin `https://dodydiaa2013-stack.github.io`. The Web App deployment must be separate from production and grant the required access for the site's JSONP/form-post flow.
 
