@@ -2628,32 +2628,31 @@ function triggerLabPageTextSyncWorkflow_(settings) {
 
 
 /**
- * ينتظر نتيجة Workflow الفعلية ويتحقق من وجود PR يحتوي آخر نسخة محفوظة.
- * قبول repository_dispatch وحده لا يعني أن طلب المراجعة أُنشئ.
- */
-/**
  * يتحقق من طلب المراجعة مباشرةً ويطابق ملف النصوص مع آخر نسخة محفوظة.
  * لا يعتمد على ظهور تشغيل repository_dispatch في قائمة Workflow Runs؛
  * لأن ظهور التشغيل قد يتأخر أو تختلف بياناته رغم إنشاء PR بنجاح.
  */
 function waitForLabPageReviewPR_(settings, expectedPayload, dispatchStartedAt) {
   const apiRoot = "https://api.github.com/repos/" + settings.repository;
+  const repositoryOwner = settings.repository.split("/")[0];
   const pullsUrl = apiRoot +
     "/pulls?state=open&head=" +
-    encodeURIComponent("dodydiaa2013-stack:automation/lab-page-text-sync") +
+    encodeURIComponent(repositoryOwner + ":automation/lab-page-text-sync") +
     "&base=main&per_page=20";
   const reviewBranch = "automation/lab-page-text-sync";
   const fileUrl = apiRoot + "/contents/" + settings.path +
     "?ref=" + encodeURIComponent(reviewBranch);
 
   let lastRunUrl = "";
+  let workflowRunChecked = false;
   let lastProblem = "";
 
   // 20 محاولة × ثانيتين = 40 ثانية كحد أقصى.
   for (let attempt = 0; attempt < 20; attempt++) {
     try {
       // تشغيل Workflow اختياري للتشخيص فقط، وليس شرطًا لتأكيد PR.
-      if (!lastRunUrl) {
+      if (!workflowRunChecked) {
+        workflowRunChecked = true;
         const workflowRunsUrl = apiRoot +
           "/actions/workflows/sync-lab-page-texts.yml/runs?event=repository_dispatch&per_page=10";
         const runsResponse = UrlFetchApp.fetch(workflowRunsUrl, {
