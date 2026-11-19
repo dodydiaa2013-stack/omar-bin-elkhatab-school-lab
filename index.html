@@ -2616,8 +2616,12 @@ function requestLabPageReviewStatus() {
         const status = document.getElementById('googleSignInStatus');
         if (status) {
             status.textContent =
-                'تم حفظ النصوص والتحقق منها. ما زال تأكيد طلب المراجعة قيد الانتظار؛ لم نعتبره منشأ دون رابط مؤكد.';
+                'تم حفظ النصوص والتحقق منها. ما زال تأكيد طلب المراجعة قيد الانتظار؛ لم نعتبره منشأ دون رابط مؤكد. سيُعاد الفحص تلقائيًا لاحقًا.';
         }
+        // قد يعمل مسار الجدولة الاحتياطي بعد عدة دقائق إذا تعذر dispatch.
+        // نخفّض معدل الطلبات بعد انتهاء الفحص السريع بدل إيقاف المتابعة نهائيًا.
+        reviewPollAttempts = 0;
+        scheduleLabPageReviewPoll(300000);
         return;
     }
 
