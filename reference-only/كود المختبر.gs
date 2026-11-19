@@ -2599,7 +2599,7 @@ function getPageChangesSyncHash_(payload) {
     Utilities.Charset.UTF_8
   );
 
-  return Utilities.base64EncodeWebSafe(digest);
+  return Utilities.base64EncodeWebSafe(digest).replace(/=+$/, "");
 }
 
 /** قراءة النصوص للموقع من GitHub فقط. */
