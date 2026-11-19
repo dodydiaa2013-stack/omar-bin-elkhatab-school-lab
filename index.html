@@ -2669,7 +2669,36 @@ function updateTextPreservingMarkup(element, savedText) {
         (child.textContent || '').length > 0
     );
     const segments = [];
+    const originalNodes = Array.from(element.childNodes);
     let cursor = 0;
+
+    // لا نعيد توزيع مقطع نصي حول أيقونة فارغة إذا كان له نص قبلها وبعدها؛
+    // موضع الفصل غير قابل للاستنتاج بأمان، لذا نرفض التطبيق دون تغيير DOM.
+    for (let i = 0; i < originalNodes.length; i++) {
+        const node = originalNodes[i];
+        if (node.nodeType !== Node.ELEMENT_NODE || (node.textContent || '').length > 0) continue;
+        let previousProtected = -1;
+        let nextProtected = originalNodes.length;
+        for (let j = i - 1; j >= 0; j--) {
+            if (originalNodes[j].nodeType === Node.ELEMENT_NODE && (originalNodes[j].textContent || '').length > 0) {
+                previousProtected = j;
+                break;
+            }
+        }
+        for (let j = i + 1; j < originalNodes.length; j++) {
+            if (originalNodes[j].nodeType === Node.ELEMENT_NODE && (originalNodes[j].textContent || '').length > 0) {
+                nextProtected = j;
+                break;
+            }
+        }
+        const hasTextBefore = originalNodes.slice(previousProtected + 1, i).some(n =>
+            n.nodeType === Node.TEXT_NODE && n.nodeValue
+        );
+        const hasTextAfter = originalNodes.slice(i + 1, nextProtected).some(n =>
+            n.nodeType === Node.TEXT_NODE && n.nodeValue
+        );
+        if (hasTextBefore && hasTextAfter) return false;
+    }
 
     for (const child of protectedChildren) {
         const childText = child.textContent || '';
