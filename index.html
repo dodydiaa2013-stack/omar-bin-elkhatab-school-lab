@@ -2587,115 +2587,83 @@ window.addEventListener('message', function(event) {
 });
 
 function assignPageEditIds() {
-    // نُبقي المعرّفات اليدوية الحالية كما هي، وننشئ معرّفات ثابتة
-    // لباقي عناصر النص الثابتة القابلة للتحرير.
-    const excludedRoots = [
-        '#devControlBar',
-        '#loginBtn',
-        '#adminBadge',
-        '#adminModal',
-        '#scheduleModal',
-        '#passwordRecoveryPanel',
-        '#tabletTeacherUpload',
-        '#tabletImageUploadControls',
-        '#tabletImageManagement',
-        '#tabletGallery',
-        '#googleSignInStatus',
-        '#scheduleOperationStatus',
-        '#scheduleTeacherControl',
-        '#scheduleBulkManagement',
-        '#scheduleBulkSelectionStatus',
-        '#schedulesGrid',
-        '#alertsTeacherControl',
-        '#photoAlbumsStatus',
-        '#photoAlbumsManagement',
-        '#albumsSelectionStatus',
-        '#photoAlbumsGrid',
-        '#photoAlbumViewer',
-        '#photoAlbumImagesGrid',
-        '#photoAlbumEditor',
-        '#photoAlbumUploadProgress',
-        '#photoAlbumUploadStatus',
-        '#photoAlbumUploadProgressText',
-        '#photoAlbumUploadResults',
-        '#albumImagesManagement',
-        '#albumImagesSelectionStatus',
-        '#scheduleClassFiles',
-        '#adminErrorMsg',
-        '#recoveryMessage',
-        '#schoolImageViewer',
-        '[data-page-no-auto-edit="true"]'
-    ].join(',');
+    // جميع معرّفات النصوص الحالية مثبتة صراحةً داخل HTML.
+    // لا ننشئ معرّفات مبنية على ترتيب العناصر؛ لأن ذلك يغيّرها عند تعديل التصميم.
+    const elements = Array.from(document.querySelectorAll('[data-page-edit-id]'));
+    const seen = new Set();
+    const duplicates = new Set();
 
-    function makeStableId(element, textNodeIndex) {
-        const path = [];
-        let current = element;
-        while (current && current !== document.body) {
-            let position = 1;
-            let previous = current.previousElementSibling;
-            while (previous) {
-                if (previous.tagName === current.tagName) position++;
-                previous = previous.previousElementSibling;
-            }
-            path.unshift(current.tagName.toLowerCase() + position);
-            current = current.parentElement;
-        }
+    elements.forEach(element => {
+        const id = (element.getAttribute('data-page-edit-id') || '').trim();
+        if (!id) return;
+        if (seen.has(id)) duplicates.add(id);
+        seen.add(id);
+    });
 
-        const value = path.join('/') +
-            (textNodeIndex === undefined ? '' : '/text-' + textNodeIndex);
-        let hashA = 2166136261;
-        let hashB = 2246822519;
-        for (let i = 0; i < value.length; i++) {
-            const code = value.charCodeAt(i);
-            hashA = Math.imul(hashA ^ code, 16777619);
-            hashB = Math.imul(hashB ^ code, 3266489917);
-        }
-        const hex = (number) => (number >>> 0).toString(16).padStart(8, '0');
-        return 'auto-' + hex(hashA) + hex(hashB);
+    if (duplicates.size) {
+        console.error('[PageChanges] معرّفات نصوص مكررة:', Array.from(duplicates));
+        window.__pageEditIdsReady = false;
+        return false;
     }
 
-    const usedIds = new Set(
-        Array.from(document.querySelectorAll('[data-page-edit-id]'))
-            .map(element => element.getAttribute('data-page-edit-id'))
-            .filter(Boolean)
-    );
+    // أي نص جديد يجب أن يحصل على data-page-edit-id صريح في HTML.
+    // لا نولّد IDs تلقائية من ترتيب DOM أو موضع العنصر.
+    window.__pageEditIdsReady = true;
+    return true;
+}
 
-    const candidates = Array.from(document.body.querySelectorAll('*'));
-    candidates.forEach(element => {
-        if (element.hasAttribute('data-page-edit-id')) return;
-        if (element.parentElement &&
-            element.parentElement.closest('[data-page-edit-id]')) return;
-        if (element.closest(excludedRoots)) return;
+// يحدّث النصوص مع إبقاء العناصر الداخلية (روابط/أيقونات/تنسيقات) كما هي.
+// إذا كان النص المحفوظ سيستلزم تغيير نص رابط أو عنصر داخلي، نرفض التطبيق
+// بدلًا من تدمير البنية أو تغيير وجهة الرابط بصمت.
+function updateTextPreservingMarkup(element, savedText) {
+    if (!element.children.length) {
+        element.textContent = savedText;
+        return true;
+    }
 
-        const tag = element.tagName;
-        if ([
-            'SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'PATH', 'CANVAS',
-            'INPUT', 'TEXTAREA', 'SELECT', 'OPTION', 'IFRAME'
-        ].includes(tag)) return;
+    const childElements = Array.from(element.children);
+    const childTexts = childElements.map(child => child.textContent || '');
+    const segments = [];
+    let cursor = 0;
 
-        if (element.children.length === 0) {
-            if (!element.textContent || !element.textContent.trim()) return;
-
-            const id = makeStableId(element);
-            if (usedIds.has(id)) return;
-
-            element.setAttribute('data-page-edit-id', id);
-            usedIds.add(id);
-            return;
+    for (const childText of childTexts) {
+        if (!childText) {
+            segments.push('');
+            continue;
         }
+        const position = savedText.indexOf(childText, cursor);
+        if (position < 0) return false;
+        segments.push(savedText.slice(cursor, position));
+        cursor = position + childText.length;
+    }
+    segments.push(savedText.slice(cursor));
 
-        Array.from(element.childNodes).forEach((node, index) => {
-            if (node.nodeType !== Node.TEXT_NODE || !node.nodeValue.trim()) return;
-            const id = makeStableId(element, index);
-            if (usedIds.has(id)) return;
+    // وزّع المقاطع النصية حول العناصر الداخلية دون المساس بالعناصر نفسها.
+    let childIndex = 0;
+    let pendingTextNodes = [];
 
-            const span = document.createElement('span');
-            span.setAttribute('data-page-edit-id', id);
-            span.textContent = node.nodeValue;
-            element.replaceChild(span, node);
-            usedIds.add(id);
-        });
-    });
+    const flushTextNodes = (segment, beforeNode) => {
+        if (pendingTextNodes.length) {
+            pendingTextNodes[0].nodeValue = segment;
+            pendingTextNodes.slice(1).forEach(node => { node.nodeValue = ''; });
+        } else if (segment) {
+            element.insertBefore(document.createTextNode(segment), beforeNode || null);
+        }
+        pendingTextNodes = [];
+    };
+
+    for (const node of Array.from(element.childNodes)) {
+        if (node.nodeType === Node.TEXT_NODE) {
+            pendingTextNodes.push(node);
+            continue;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            flushTextNodes(segments[childIndex] || '', node);
+            childIndex++;
+        }
+    }
+    flushTextNodes(segments[childElements.length] || '', null);
+    return true;
 }
 
 const PAGE_CHANGES_CACHE_KEY = "obk_lab_page_changes_cache_v1";
@@ -2786,7 +2754,14 @@ function applyPageChangesList(changes) {
             }
         }
 
-        element.textContent = savedText;
+        if (!updateTextPreservingMarkup(element, savedText)) {
+            stats.invalid++;
+            console.warn(
+                "[PageChanges] تم إيقاف تطبيق النص لحماية الروابط والعناصر الداخلية:",
+                item.id
+            );
+            return;
+        }
         stats.applied++;
     });
 
