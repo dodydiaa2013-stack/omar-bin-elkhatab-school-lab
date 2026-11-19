@@ -244,8 +244,9 @@
 </script>
 <script>
     // رابط خادم المختبر يُضبط من موضع واحد فقط بعد نشر Web App التجريبي.
-    window.LAB_GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz3z04wldh7BZbIn8pfcjgjRLfXrV2RgEQrBkHkp5SzVXpl1DHTdADpPqud6kyehDNW/exec";
-    window.LAB_GOOGLE_OAUTH_CLIENT_ID = "889693944069-ccstkm8sdj77p9k9qidhme2d5fhcfef4.apps.googleusercontent.com";
+    window.LAB_GOOGLE_SCRIPT_URL = "https://example.invalid/lab-backend-disabled";
+    window.LAB_GOOGLE_OAUTH_CLIENT_ID = "REPLACE_WITH_LAB_GOOGLE_OAUTH_CLIENT_ID";
+    window.__labBackendReady = false;
 
     // ابدأ طلب تعديلات النصوص أثناء قراءة الصفحة بدل انتظار DOMContentLoaded.
     // إذا وصلت الاستجابة قبل تجهيز عناصر الصفحة، احتفظ بها حتى تصبح جاهزة.
@@ -268,7 +269,7 @@
         const request = document.createElement("script");
         request.async = true;
         request.src = endpoint +
-            "?action=pageChanges&callback=receivePageChangesEarly&_=" +
+            "?action=pageChanges&environment=LAB&callback=receivePageChangesEarly&_=" +
             Date.now();
 
         request.onload = () => {
@@ -2436,6 +2437,10 @@ function toggleLiveEditing() {
 }
 
 async function saveAllPageChanges() {
+    if (window.__labBackendReady !== true) {
+        alert("تم إيقاف الحفظ لحماية الموقع: لم يتم تأكيد الاتصال بخادم المختبر المنفصل. لا تستخدم رابط خادم الإنتاج.");
+        return;
+    }
     if (!hasDualAdminAuthorization()) {
         alert('يجب تسجيل الدخول بكلمة مرور المسؤول وحساب Google المصرح به قبل حفظ التعديلات.');
         return;
@@ -2513,7 +2518,7 @@ async function saveAllPageChanges() {
     form.action = GOOGLE_SCRIPT_URL;
     form.target = 'pageChangesUploadFrame';
     form.style.display = 'none';
-    const fields = { action:'savePageChanges', googleUploadToken:googleUploadToken, adminSessionToken:window.adminSessionToken, nonce:nonce, origin:location.origin, replaceAll:'true', changes:payload };
+    const fields = { action:'savePageChanges', environment:'LAB', googleUploadToken:googleUploadToken, adminSessionToken:window.adminSessionToken, nonce:nonce, origin:location.origin, changes:payload };
     Object.entries(fields).forEach(([name,value]) => {
         const input=document.createElement('input'); input.type='hidden'; input.name=name; input.value=value; form.appendChild(input);
     });
@@ -2551,17 +2556,15 @@ window.addEventListener('message', function(event) {
 
     // لا نعلن النجاح إلا بعد إعادة قراءة النصوص والتحقق منها في GitHub.
     if (
+        result.environment === "LAB" &&
         result.success === true &&
         result.githubSaved === true &&
         result.githubVerified === true
     ) {
         cacheCurrentPageChanges();
 
-        const workflowStarted = result.workflowTriggered === true;
-        const saveSuccessMessage = 'تم الحفظ بنجاح ✅ تم تخزين التعديلات والتحقق منها في مستودع المختبر.';
-        const publishMessage = workflowStarted
-            ? 'بدأ النشر التلقائي؛ ستظهر التعديلات على الموقع بعد اكتمال التحديث.'
-            : 'تم تأكيد الحفظ؛ وسيتم نشر التعديلات تلقائيًا في دورة التحقق المجدولة.';
+        const saveSuccessMessage = 'تم الحفظ والتحقق بنجاح في مستودع المختبر.';
+        const publishMessage = 'سيُنشأ طلب مراجعة للتحديث، ولن يتم نشره قبل مراجعته وموافقتك.';
         if (status) {
             status.textContent = saveSuccessMessage + ' ' + publishMessage;
             status.classList.remove('hidden');
@@ -2695,7 +2698,7 @@ function assignPageEditIds() {
     });
 }
 
-const PAGE_CHANGES_CACHE_KEY = "obk_page_changes_cache_v1";
+const PAGE_CHANGES_CACHE_KEY = "obk_lab_page_changes_cache_v1";
 let pageChangesResponseReceived = false;
 let pageChangesRequestInFlight = false;
 let pageChangesPollTimer = null;
@@ -2832,7 +2835,7 @@ function loadSavedPageChanges() {
 
     script.src =
         scriptURL +
-        "?action=pageChanges&callback=receivePageChanges&_=" +
+        "?action=pageChanges&environment=LAB&callback=receivePageChanges&_=" +
         Date.now();
 
     script.onerror = () => {
@@ -2880,14 +2883,23 @@ function startPageChangesPolling() {
 function receivePageChanges(data) {
     pageChangesResponseReceived = true;
 
-    // لا نحوّل خطأ قراءة الخادم أو الاستجابة غير السليمة إلى قائمة تعديلات فارغة.
-    if (!data || data.success !== true || !Array.isArray(data.changes)) {
-        const message = data && (data.message || data.error)
-            ? (data.message || data.error)
-            : "استجابة الخادم لا تحتوي على قائمة تعديلات صحيحة.";
-        console.error("تعذر استرجاع تعديلات نصوص الموقع:", message);
+    // لا نقبل أي رد إلا إذا أكد صراحةً أنه صادر من خادم المختبر المنفصل.
+    if (!data || data.environment !== "LAB") {
+        window.__labBackendReady = false;
+        console.error("تم رفض استجابة النصوص: لم يتم تأكيد بيئة LAB. لن يُسمح بالحفظ.");
         return false;
     }
+
+    if (data.success !== true || !Array.isArray(data.changes)) {
+        window.__labBackendReady = false;
+        const message = data && (data.message || data.error)
+            ? (data.message || data.error)
+            : "استجابة خادم المختبر لا تحتوي على قائمة تعديلات صحيحة.";
+        console.error("تعذر استرجاع تعديلات نصوص المختبر:", message);
+        return false;
+    }
+
+    window.__labBackendReady = true;
 
     const normalizedChanges = normalizeFixedPageChanges(data.changes);
     const applyStats = applyPageChangesList(normalizedChanges);
