@@ -2593,10 +2593,16 @@ async function saveAllPageChanges() {
     if(status) status.textContent='تم إرسال طلب الحفظ، في انتظار تأكيد حفظ النصوص في GitHub...';
     pageChangesTimeout=setTimeout(() => {
         if(pendingPageChangesNonce===nonce) {
-            pendingPageChangesNonce=null;
-            pendingPageChangesSnapshot=null;
-            if(status) status.textContent='لم يصل تأكيد الحفظ. احتُفظ بالتعديلات محليًا؛ تحقق من المستودع قبل إعادة المحاولة.';
-            alert('لم يصل تأكيد من الخادم؛ لم يتم تأكيد حفظ التعديلات.');
+            // لا نُسقط nonce أو snapshot عند انتهاء المهلة:
+            // قد يكون الخادم أكمل الحفظ لكن رد postMessage تأخر.
+            // إبقاء nonce يسمح بقبول الرد المتأخر ويمنع إرسال حفظ مكرر.
+            if(status) {
+                status.textContent =
+                    'تأخر تأكيد الخادم عن المعتاد. لا تعاود الحفظ الآن؛ جارٍ انتظار الرد، وقد يكون الحفظ اكتمل بالفعل.';
+                status.classList.remove('hidden');
+                status.setAttribute('role', 'status');
+                status.setAttribute('aria-live', 'polite');
+            }
         }
     },60000);
 }
