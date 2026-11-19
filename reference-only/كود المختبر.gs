@@ -2681,9 +2681,8 @@ function triggerLabPageTextSyncWorkflow_(settings) {
 
 
 /**
- * يتحقق من طلب المراجعة مباشرةً ويطابق ملف النصوص مع آخر نسخة محفوظة.
- * لا يعتمد على ظهور تشغيل repository_dispatch في قائمة Workflow Runs؛
- * لأن ظهور التشغيل قد يتأخر أو تختلف بياناته رغم إنشاء PR بنجاح.
+ * فحص مستقل لحالة طلب المراجعة بعد انتهاء الحفظ.
+ * لا ينتظر Workflow داخل طلب الحفظ، ولا يؤكد PR إلا بعد مطابقة بصمة ملفه.
  */
 function checkLabPageReviewStatus(p) {
   p = p || {};
