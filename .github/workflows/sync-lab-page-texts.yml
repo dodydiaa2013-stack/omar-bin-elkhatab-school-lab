@@ -1,5 +1,5 @@
 name: Sync lab page text and publish automatically
-# Apps Script writes only to the dedicated input branch.
+# Apps Script writes the GitHub-only page-text JSON to the dedicated input branch.
 # This workflow builds from main, validates the result, then proposes and merges
 # the text-only update. Repository branch protection remains in force.
 on:
@@ -79,7 +79,7 @@ jobs:
               --title "Publish saved LAB school page text" \
               --body "## Automatic page-text publication
 
-          - Generated from the latest LAB Google Drive-saved page text payload.
+          - Generated from the latest LAB GitHub-only page text payload.
           - Updates only page-changes-lab.json and matching text in index.html.
           - The workflow validates the generated update before proposing it.
           - GitHub branch protection is not bypassed; if a required approval or check blocks merging, the PR remains open and the workflow reports the failure."
