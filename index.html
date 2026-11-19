@@ -2527,7 +2527,7 @@ function toggleLiveEditing() {
 
                 // اسم المدير حالة خاصة: نسمح بتحرير span حتى تبقى معالجته المخصصة فعالة.
                 const isManagerName =
-                    el.id === 'footer-manager' &&
+                    el.getAttribute('data-page-edit-id') === 'footer-manager' &&
                     child.tagName === 'SPAN' &&
                     child.parentElement === el;
 
@@ -3047,7 +3047,27 @@ function applyPageChangesList(changes) {
 
     if (!Array.isArray(changes)) return stats;
 
+    // طبّق العناصر الأعمق أولًا؛ حتى تُحدّث النصوص الداخلية قبل إعادة بناء
+    // نص العنصر الأب مع الحفاظ على عناصره الداخلية.
+    const depthById = new Map();
     changes.forEach(item => {
+        if (!item || typeof item.id !== "string") return;
+        const matches = document.querySelectorAll(
+            '[data-page-edit-id="' + CSS.escape(item.id) + '"]'
+        );
+        if (matches.length !== 1) {
+            depthById.set(item.id, -1);
+            return;
+        }
+        let depth = 0;
+        for (let node = matches[0]; node; node = node.parentElement) depth++;
+        depthById.set(item.id, depth);
+    });
+    const orderedChanges = changes.slice().sort((a, b) =>
+        (depthById.get(b && b.id) || -1) - (depthById.get(a && a.id) || -1)
+    );
+
+    orderedChanges.forEach(item => {
         if (!item || typeof item.id !== "string" || typeof item.text !== "string") {
             stats.invalid++;
             return;
