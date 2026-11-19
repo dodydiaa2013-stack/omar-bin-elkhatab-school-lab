@@ -2851,7 +2851,7 @@ function applyPageChangesList(changes) {
         // لا نسمح لرد polling قديم باستبداله قبل تأكيد GitHub.
         if (unsavedPageTextChanges.has(item.id)) {
             stats.skippedEditing++;
-            continue;
+            return;
         }
 
         // لا تطبّق ردود الخادم فوق نص يحرره المسؤول حاليًا.
