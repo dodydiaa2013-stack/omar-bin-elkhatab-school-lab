@@ -285,7 +285,7 @@ function pageChangesPostMessage(p, result) {
   const payload = JSON.stringify({
     type: "savePageChangesResult",
     nonce: nonce,
-    result: result || {}
+    result: Object.assign({ environment: "LAB" }, result || {})
   }).replace(/</g, "\\u003c");
 
   const html = `
@@ -1366,6 +1366,13 @@ if (action === "photoAlbums") {
     );
   }
   if (action === "pageChanges") {
+    if (String(p.environment || "") !== "LAB") {
+      return outputWithCallback({
+        success: false,
+        environment: "LAB",
+        message: "طلب قراءة النصوص لا يحمل علامة المختبر الصحيحة."
+      }, p.callback);
+    }
     return outputWithCallback(
       getPageChangesForClient_(),
       p.callback
@@ -2545,11 +2552,13 @@ function getPageChangesSyncHash_(payload) {
 /** قراءة النصوص للموقع من GitHub فقط. */
 function getSavedPageChanges() {
   try {
-    return readLabPageChangesFromGitHub_().payload;
+    const payload = readLabPageChangesFromGitHub_().payload;
+    return Object.assign({}, payload, { environment: "LAB" });
   } catch (error) {
     console.error("تعذر قراءة تعديلات النصوص من GitHub: " + error.message);
     return {
       success: false,
+      environment: "LAB",
       message: "تعذر قراءة تعديلات النصوص من مستودع المختبر. لم يتم اعتبارها قائمة فارغة."
     };
   }
@@ -2620,6 +2629,10 @@ function triggerLabPageTextSyncWorkflow_(settings) {
 
 function savePageChanges(p) {
   p = p || {};
+
+  if (String(p.environment || "") !== "LAB") {
+    throw new Error("تم رفض الحفظ لأن الطلب لا يحدد بيئة المختبر.");
+  }
 
   verifyAdminToken(p.googleUploadToken || p.token || "");
   verifyAdminSession(p.adminSessionToken || "");
@@ -2723,8 +2736,6 @@ function savePageChanges(p) {
     });
   });
 
-  const replaceAll = String(p.replaceAll || "").toLowerCase() === "true";
-
   if (!cleanChanges.length) {
     throw new Error("لا توجد تعديلات للحفظ");
   }
@@ -2738,11 +2749,10 @@ function savePageChanges(p) {
     const current = readLabPageChangesFromGitHub_();
     const merged = new Map();
 
-    if (!replaceAll) {
-      current.payload.changes.forEach(function(item) {
-        merged.set(item.id, item.text);
-      });
-    }
+    // احتفظ بكل المعرّفات السابقة دائمًا؛ لا يسمح مسار المختبر باستبدال القائمة كاملة.
+    current.payload.changes.forEach(function(item) {
+      merged.set(item.id, item.text);
+    });
 
     cleanChanges.forEach(function(item) {
       merged.set(item.id, item.text);
@@ -2827,14 +2837,13 @@ function savePageChanges(p) {
 
     return pageChangesPostMessage(p, {
       success: true,
+      environment: "LAB",
       githubSaved: true,
       githubVerified: true,
       workflowTriggered: workflowTriggered,
       workflowTriggerError: workflowTriggerError,
       htmlUpdatePending: true,
-      message: workflowTriggered
-        ? "تم حفظ النصوص والتحقق منها وبدء النشر التلقائي."
-        : "تم حفظ النصوص والتحقق منها. سيعالجها التشغيل التلقائي المجدول.",
+      message: "تم حفظ النصوص والتحقق منها في مستودع المختبر. سيُنشأ طلب مراجعة، ولن يتم تحديث الصفحة المنشورة قبل الموافقة عليه.",
       count: finalChanges.length
     });
 
