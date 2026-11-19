@@ -1623,7 +1623,7 @@ window.addEventListener('DOMContentLoaded', () => {
         loadSavedPageChanges();
     }
 
-    if (window.__pageChangesFallbackPending) {
+    if (window.__pageChangesFallbackPending && !window.__labBackendReady) {
         applyCachedPageChangesFallback(window.__pageChangesFallbackPending);
         window.__pageChangesFallbackPending = "";
     }
@@ -3363,6 +3363,7 @@ function receivePageChanges(data) {
 
     window.__labBackendReady = true;
     window.__pageChangesUsingLocalFallback = false;
+    window.__pageChangesFallbackPending = "";
 
     const normalizedChanges = normalizeFixedPageChanges(data.changes);
     const applyStats = applyPageChangesList(normalizedChanges);
