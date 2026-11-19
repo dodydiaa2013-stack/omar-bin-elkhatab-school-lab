@@ -2448,10 +2448,39 @@ async function saveAllPageChanges() {
     const editableElements = Array.from(
         document.querySelectorAll('[data-page-edit-id]')
     );
-    const changes = editableElements.map(el => ({
-        id: el.getAttribute('data-page-edit-id'),
-        text: el.textContent.trim()
-    })).filter(item => item.id && item.text.length <= 10000);
+
+    // قد تحتوي الصفحة على عناصر مكررة بالمعرّف نفسه بعد إعادة إنشاء
+    // بعض مكوّنات الواجهة. لا نرسل المعرّف مرتين إلى الخادم.
+    // نحتفظ بأول عنصر كمرجع ثابت، ونستخدم العنصر النشط إن كان هو
+    // أحد العناصر المتكررة حتى لا نفقد النص الذي يجري تحريره.
+    const changesById = new Map();
+    const duplicateIds = new Set();
+
+    editableElements.forEach(el => {
+        const id = el.getAttribute('data-page-edit-id');
+        const text = el.textContent.trim();
+        if (!id || text.length > 10000) return;
+
+        if (!changesById.has(id)) {
+            changesById.set(id, { id, text });
+            return;
+        }
+
+        duplicateIds.add(id);
+        if (document.activeElement === el) {
+            changesById.set(id, { id, text });
+        }
+    });
+
+    const changes = Array.from(changesById.values());
+
+    if (duplicateIds.size) {
+        console.warn(
+            'تم اكتشاف معرّفات نصوص مكررة واستبعاد تكرارها قبل الحفظ:',
+            Array.from(duplicateIds)
+        );
+    }
+
     if (!changes.length) {
         alert('لا توجد نصوص قابلة للحفظ.');
         return;
