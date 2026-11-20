@@ -252,6 +252,8 @@
 <script>
     // رابط خادم المختبر يُضبط من موضع واحد فقط بعد نشر Web App التجريبي.
     window.LAB_GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz3z04wldh7BZbIn8pfcjgjRLfXrV2RgEQrBkHkp5SzVXpl1DHTdADpPqud6kyehDNW/exec";
+    // عرّف الرابط في النطاق العام قبل سكربت التحميل المبكر حتى لا يحدث ReferenceError.
+    const GOOGLE_SCRIPT_URL = window.LAB_GOOGLE_SCRIPT_URL;
     window.LAB_GOOGLE_OAUTH_CLIENT_ID = "889693944069-ccstkm8sdj77p9k9qidhme2d5fhcfef4.apps.googleusercontent.com";
     window.__labBackendReady = false;
 
@@ -281,7 +283,7 @@
     // ابدأ طلب تعديلات النصوص أثناء قراءة الصفحة بدل انتظار DOMContentLoaded.
     // إذا وصلت الاستجابة قبل تجهيز عناصر الصفحة، احتفظ بها حتى تصبح جاهزة.
     (() => {
-        const endpoint = window.LAB_GOOGLE_SCRIPT_URL;
+        const endpoint = GOOGLE_SCRIPT_URL;
         window.__pageChangesDomReady = false;
         window.__earlyPageChangesReceived = false;
 
@@ -1229,7 +1231,7 @@
 
     <!-- JAVASCRIPT LOGIC -->
     <script>
-        const GOOGLE_SCRIPT_URL = window.LAB_GOOGLE_SCRIPT_URL;
+        // GOOGLE_SCRIPT_URL مُعرّف مسبقًا قبل سكربت التحميل المبكر.
 
         // معاينة الصور داخل الموقع مع تكبير مستقل للصورة دون تكبير صفحة الموقع.
         let schoolImageViewerReturnFocus = null;
