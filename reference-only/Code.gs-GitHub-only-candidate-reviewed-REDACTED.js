@@ -3279,7 +3279,7 @@ function verifyDeveloperGoogle(p) {
       p && (p.token || p.googleUploadToken) || ""
     ).trim();
 
-    const allowedDeveloperEmail = "REPLACE_WITH_DEVELOPER_EMAIL";
+    const allowedDeveloperEmail = ALLOWED_EMAIL;
 
     if (!token) {
       return developerGooglePostMessage(p, {
