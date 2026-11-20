@@ -3562,7 +3562,8 @@ function fetchPhotoAlbumsSnapshot() {
     return sharedRequest;
 }
 
-async function fetchTabletGalleryImages() {
+// طلب واحد مشترك يمنع تكرار استدعاء Apps Script عند تزامن تحديثات المعرض.
+function requestTabletGalleryImagesAttempt_(attemptNumber) {
     const scriptUrl = GOOGLE_SCRIPT_URL;
     const callbackName = 'schoolGalleryFetch_' + Date.now() + '_' +
         Math.random().toString(36).slice(2).replace(/[^a-zA-Z0-9_]/g, '');
@@ -3570,38 +3571,93 @@ async function fetchTabletGalleryImages() {
     return new Promise((resolve, reject) => {
         const script = document.createElement('script');
         let finished = false;
+        let timeout = null;
 
         const cleanup = () => {
             if (finished) return;
             finished = true;
-            clearTimeout(timeout);
+            if (timeout) clearTimeout(timeout);
+            script.onerror = null;
             script.remove();
             delete window[callbackName];
         };
 
-        const timeout = setTimeout(() => {
+        const fail = (message, code) => {
             cleanup();
-            reject(new Error('انتهت مهلة تحديث المعرض.'));
+            const error = new Error(message);
+            error.code = code;
+            error.attempt = attemptNumber;
+            reject(error);
+        };
+
+        timeout = setTimeout(() => {
+            fail('انتهت مهلة تحديث المعرض.', 'GALLERY_TIMEOUT');
         }, 15000);
 
         window[callbackName] = result => {
             cleanup();
             if (result && result.success && Array.isArray(result.images)) {
                 resolve(result.images);
-            } else {
-                reject(new Error('تعذر جلب معرض الصور.'));
+                return;
             }
+
+            const error = new Error(
+                (result && result.message) || 'تعذر جلب معرض الصور.'
+            );
+            error.code = 'GALLERY_RESPONSE_ERROR';
+            error.attempt = attemptNumber;
+            reject(error);
         };
 
         script.onerror = () => {
-            cleanup();
-            reject(new Error('تعذر الاتصال بمعرض الصور.'));
+            fail('تعذر الاتصال بمعرض الصور.', 'GALLERY_NETWORK_ERROR');
         };
 
         script.src = scriptUrl + '?action=gallery&callback=' +
             encodeURIComponent(callbackName) + '&_=' + Date.now();
         document.body.appendChild(script);
     });
+}
+
+function fetchTabletGalleryImages() {
+    // جميع المستدعين المتزامنين ينتظرون الطلب نفسه بدل إنشاء عدة عناصر script.
+    if (window.__tabletGalleryFetchPromise) {
+        return window.__tabletGalleryFetchPromise;
+    }
+
+    const sharedRequest = (async () => {
+        try {
+            return await requestTabletGalleryImagesAttempt_(1);
+        } catch (firstError) {
+            // أعد المحاولة مرة واحدة لأخطاء الشبكة والمهلة فقط؛
+            // أخطاء رد الخادم لا تُعاد حتى لا نخفي مشكلة حقيقية في البيانات.
+            if (!firstError ||
+                (firstError.code !== 'GALLERY_TIMEOUT' &&
+                 firstError.code !== 'GALLERY_NETWORK_ERROR')) {
+                throw firstError;
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 1200));
+            return await requestTabletGalleryImagesAttempt_(2);
+        }
+    })();
+
+    window.__tabletGalleryFetchPromise = sharedRequest;
+
+    sharedRequest.then(
+        () => {
+            if (window.__tabletGalleryFetchPromise === sharedRequest) {
+                window.__tabletGalleryFetchPromise = null;
+            }
+        },
+        () => {
+            if (window.__tabletGalleryFetchPromise === sharedRequest) {
+                window.__tabletGalleryFetchPromise = null;
+            }
+        }
+    );
+
+    return sharedRequest;
 }
 
 async function renderTabletGallery(imagesOverride) {
