@@ -666,7 +666,7 @@
                     .home-hero-actions button { width:100%; justify-content:center; }
                 }
 
-                /* إبقاء صورة الواجهة طولية وكاملة وواضحة عند تدوير الهاتف أفقيًا فقط. */
+                /* إبقاء صورة الواجهة طولية وكاملة مع تكبيرها على الهاتف الأفقي فقط. */
                 @media (hover: none) and (pointer: coarse) and (orientation: landscape) {
                     .home-hero-photo {
                         min-height: 0;
@@ -676,8 +676,8 @@
                     .home-hero-photo img {
                         width: auto;
                         height: auto;
-                        max-width: min(78vw, 260px);
-                        max-height: min(62vh, 300px);
+                        max-width: min(88vw, 360px);
+                        max-height: min(82vh, 420px);
                         min-height: 0;
                         object-fit: contain;
                         object-position: center;
