@@ -666,18 +666,21 @@
                     .home-hero-actions button { width:100%; justify-content:center; }
                 }
 
-                /* اختبار ضبط ارتفاع صورة الواجهة عند تدوير الهاتف إلى الوضع الأفقي فقط. */
+                /* إبقاء صورة الواجهة طولية وكاملة وواضحة عند تدوير الهاتف أفقيًا فقط. */
                 @media (hover: none) and (pointer: coarse) and (orientation: landscape) {
                     .home-hero-photo {
                         min-height: 0;
                         align-items: center;
+                        justify-content: center;
                     }
                     .home-hero-photo img {
-                        height: clamp(150px, 42vh, 220px);
+                        width: auto;
+                        height: auto;
+                        max-width: min(78vw, 260px);
+                        max-height: min(62vh, 300px);
                         min-height: 0;
-                        max-height: none;
-                        object-fit: cover;
-                        object-position: center 28%;
+                        object-fit: contain;
+                        object-position: center;
                     }
                 }
             </style>
