@@ -665,6 +665,21 @@
                     .home-hero-actions { display:grid; grid-template-columns:1fr; }
                     .home-hero-actions button { width:100%; justify-content:center; }
                 }
+
+                /* اختبار ضبط ارتفاع صورة الواجهة عند تدوير الهاتف إلى الوضع الأفقي فقط. */
+                @media (hover: none) and (pointer: coarse) and (orientation: landscape) {
+                    .home-hero-photo {
+                        min-height: 0;
+                        align-items: center;
+                    }
+                    .home-hero-photo img {
+                        height: clamp(150px, 42vh, 220px);
+                        min-height: 0;
+                        max-height: none;
+                        object-fit: cover;
+                        object-position: center 28%;
+                    }
+                }
             </style>
             <div class="home-hero">
                 <div class="home-hero-copy">
