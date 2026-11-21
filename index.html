@@ -666,7 +666,7 @@
                     .home-hero-actions button { width:100%; justify-content:center; }
                 }
 
-                /* زيادة الحجم الفعلي لصورة الواجهة في الهاتف الأفقي مع الحفاظ على نسبتها. */
+                /* تكبير صورة الواجهة طولياً وعرضياً في الهاتف الأفقي فقط دون قصّها. */
                 @media (hover: none) and (pointer: coarse) and (orientation: landscape) {
                     .home-hero-photo {
                         width: 100%;
@@ -675,10 +675,10 @@
                         justify-content: center;
                     }
                     .home-hero-photo img {
-                        width: min(94vw, 700px);
-                        height: auto;
-                        max-width: 94vw;
-                        max-height: 96vh;
+                        width: min(98vw, 900px);
+                        height: min(110vh, 700px);
+                        max-width: 98vw;
+                        max-height: 110vh;
                         min-height: 0;
                         object-fit: contain;
                         object-position: center;
