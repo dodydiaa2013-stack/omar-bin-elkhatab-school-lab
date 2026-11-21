@@ -570,7 +570,7 @@
                 .home-hero-results { background:linear-gradient(180deg,#ffd33e,#f5a900); color:#092654; border:1px solid #ffe17b; }
                 .home-hero-tablet { background:linear-gradient(180deg,#1682e8,#0753ae); color:#fff; border:1px solid #48a9ff; text-shadow:0 1px 2px #002c66; }
                 .home-hero-photo { min-height:100%; padding:.65rem; display:flex; align-items:stretch; position:relative; }
-                .home-hero-photo img { width:100%; height:clamp(420px, 42vw, 520px); min-height:420px; max-width:100%; object-fit:contain; object-position:center; background:#f8fafc; border-radius:1.1rem; border:0; box-shadow:0 8px 24px #0005; }
+                .home-hero-photo img { width:100%; height:100%; min-height:300px; object-fit:cover; object-position:center 28%; border-radius:1.1rem; border:0; box-shadow:0 8px 24px #0005; }
 
                 .home-feature-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1.15rem; }
                 .home-feature-card {
@@ -661,7 +661,7 @@
                     .home-hero { grid-template-columns:1fr; }
                     .home-hero-copy { padding:1.35rem; }
                     .home-hero-photo { padding:0 .8rem .8rem; }
-                    .home-hero-photo img { width:100%; height:420px; min-height:420px; max-height:none; object-fit:contain; object-position:center; background:#f8fafc; }
+                    .home-hero-photo img { min-height:230px; max-height:270px; object-position:center 28%; }
                     .home-hero-actions { display:grid; grid-template-columns:1fr; }
                     .home-hero-actions button { width:100%; justify-content:center; }
                 }
@@ -669,7 +669,7 @@
                 /* زيادة طول صورة الواجهة في الهاتف الأفقي مع إبقائها داخل عمودها بعيداً عن الحواف. */
                 @media (hover: none) and (pointer: coarse) and (orientation: landscape) {
                     .home-hero {
-                        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+                        grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
                     }
                     .home-hero-photo {
                         box-sizing: border-box;
@@ -680,8 +680,8 @@
                         justify-content: center;
                     }
                     .home-hero-photo img {
-                        width: auto;
-                        height: min(96vh, 560px);
+                        width: 100%;
+                        height: min(96vh, 620px);
                         max-width: 100%;
                         max-height: 96vh;
                         min-height: 0;
