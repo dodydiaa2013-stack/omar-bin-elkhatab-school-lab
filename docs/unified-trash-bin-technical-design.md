@@ -8,7 +8,7 @@
 
 تمت مراجعة نسخة GitHub المرجعية من:
 - `reference-only/Code-production-GitHub-only.gs`
-- SHA-256 Git blob: `1c822951ad828b270fde8e9d942e6612952bf491`
+- Git blob SHA: `1c822951ad828b270fde8e9d942e6612952bf491`
 - الحجم: 3,975 سطرًا.
 
 هذه مراجعة للكود المحفوظ في المستودع، وليست إثباتًا أن النسخة المنشورة في Apps Script مطابقة له.
