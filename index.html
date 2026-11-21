@@ -5959,5 +5959,124 @@ async function deleteCurrentPhotoAlbum() {
 }
 
     </script>
+
+<script id="lab-demo-content">
+/*
+ * محتوى معاينة تجريبي فقط:
+ * لا يتصل بـ Apps Script ولا يستخدم ملفات أو بيانات من الموقع الأصلي.
+ * عناصر الصور بلا file IDs، لذلك لا تظهر أدوات الحذف/الاستبدال الإدارية.
+ */
+(function () {
+    'use strict';
+    const LAB_DEMO_MODE = location.hostname.endsWith('github.io') &&
+        location.pathname.indexOf('/omar-bin-elkhatab-school-lab') !== -1;
+
+    if (!LAB_DEMO_MODE) return;
+
+    const photo = (id) => 'https://picsum.photos/seed/' +
+        encodeURIComponent(id) + '/1000/700';
+
+    const demoGallery = [
+        { name: 'أنشطة طلابية – يوم مدرسي', url: photo('photo-1529390079861-591de354faf5') },
+        { name: 'أنشطة رياضية', url: photo('photo-1460353581641-37baddab0fa2') },
+        { name: 'التعلم والعمل الجماعي', url: photo('photo-1524178232363-1fb2b075b655') },
+        { name: 'أنشطة فنية وإبداعية', url: photo('photo-1513364776144-60967b0f800f') },
+        { name: 'معرض تجريبي – مكتبة المدرسة', url: photo('photo-1507842217343-583bb7270b66') },
+        { name: 'معرض تجريبي – قاعة تعليمية', url: photo('photo-1509062522246-3755977927d7') }
+    ];
+
+    const demoAlbums = [
+        {
+            id: 'lab-album-activities',
+            title: 'ألبوم الأنشطة المدرسية – تجريبي',
+            description: 'صور تجريبية لاختبار عرض الألبومات وفتح الصور.',
+            coverUrl: photo('photo-1529390079861-591de354faf5'),
+            imageCount: 4,
+            images: [
+                { name: 'نشاط طلابي', url: photo('photo-1529390079861-591de354faf5') },
+                { name: 'نشاط رياضي', url: photo('photo-1460353581641-37baddab0fa2') },
+                { name: 'عمل جماعي', url: photo('photo-1524178232363-1fb2b075b655') },
+                { name: 'نشاط فني', url: photo('photo-1513364776144-60967b0f800f') }
+            ]
+        },
+        {
+            id: 'lab-album-learning',
+            title: 'ألبوم التعليم والتكنولوجيا – تجريبي',
+            description: 'صور توضيحية تجريبية لقسم التطوير والتابلت.',
+            coverUrl: photo('photo-1509062522246-3755977927d7'),
+            imageCount: 4,
+            images: [
+                { name: 'فصل تعليمي', url: photo('photo-1509062522246-3755977927d7') },
+                { name: 'مكتبة', url: photo('photo-1507842217343-583bb7270b66') },
+                { name: 'تعلم رقمي', url: photo('photo-1516321318423-f06f85e504b3') },
+                { name: 'تجربة تعليمية', url: photo('photo-1503676260728-1c00da094a0b') }
+            ]
+        },
+        {
+            id: 'lab-album-school-life',
+            title: 'ألبوم الحياة المدرسية – تجريبي',
+            description: 'مجموعة صور عامة غير مرتبطة بطلاب المدرسة.',
+            coverUrl: photo('photo-1509062522246-3755977927d7'),
+            imageCount: 4,
+            images: [
+                { name: 'قاعة دراسية', url: photo('photo-1509062522246-3755977927d7') },
+                { name: 'كتب ومراجع', url: photo('photo-1497366754035-f200968a6e72') },
+                { name: 'مناقشة جماعية', url: photo('photo-1524178232363-1fb2b075b655') },
+                { name: 'مكتبة تعليمية', url: photo('photo-1507842217343-583bb7270b66') }
+            ]
+        }
+    ];
+
+    const demoSchedules = {};
+    ['1/1','1/2','1/3','1/4','1/5','1/6','1/7','1/8'].forEach((className, index) => {
+        const scheduleImageIds = [
+            'photo-1434030216411-0b793f4b4173',
+            'photo-1455390582262-044cdead277a',
+            'photo-1517842645767-c639042777db',
+            'photo-1453738773917-9c3eff1db985',
+            'photo-1516321318423-f06f85e504b3',
+            'photo-1456513080510-7bf3a84b82f8',
+            'photo-1453738773917-9c3eff1db985',
+            'photo-1434030216411-0b793f4b4173'
+        ];
+        demoSchedules[className] = {
+            name: 'قائمة فصل ' + className + ' – صورة تجريبية',
+            url: photo(scheduleImageIds[index])
+        };
+    });
+
+    window.fetchTabletGalleryImages = async function () {
+        return demoGallery.map(item => ({ ...item }));
+    };
+    window.fetchSchedulesSnapshot = async function () {
+        return JSON.parse(JSON.stringify(demoSchedules));
+    };
+    window.fetchPhotoAlbumsSnapshot = async function () {
+        return JSON.parse(JSON.stringify(demoAlbums));
+    };
+
+    window.addEventListener('DOMContentLoaded', function () {
+        const note = document.createElement('div');
+        note.className = 'mx-auto my-3 max-w-6xl rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-xs font-bold text-amber-900';
+        note.textContent = 'وضع المعاينة التجريبية: الصور والألبومات وقوائم الفصول المعروضة أمثلة عامة وليست بيانات حقيقية للمدرسة.';
+        const main = document.querySelector('main');
+        if (main) main.prepend(note);
+
+        const gallery = document.getElementById('tabletGallery');
+        if (gallery && typeof renderTabletGallery === 'function') {
+            renderTabletGallery(demoGallery);
+        }
+
+        if (typeof loadPhotoAlbums === 'function') {
+            loadPhotoAlbums(true);
+        }
+
+        if (typeof loadSchedulesFromDrive === 'function') {
+            loadSchedulesFromDrive();
+        }
+    });
+})();
+</script>
+
 </body>
 </html>
