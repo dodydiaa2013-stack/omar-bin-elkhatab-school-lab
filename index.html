@@ -5973,8 +5973,8 @@ async function deleteCurrentPhotoAlbum() {
 
     if (!LAB_DEMO_MODE) return;
 
-    const photo = (id) => 'https://images.unsplash.com/' + id +
-        '?auto=format&fit=crop&w=1000&q=78';
+    const photo = (id) => 'https://picsum.photos/seed/' +
+        encodeURIComponent(id) + '/1000/700';
 
     const demoGallery = [
         { name: 'أنشطة طلابية – يوم مدرسي', url: photo('photo-1529390079861-591de354faf5') },
